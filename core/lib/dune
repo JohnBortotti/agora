@@ -1,0 +1,3 @@
+(library
+ (name agora_core)
+ (libraries digestif cryptokit))

@@ -1,0 +1,8 @@
+services:
+  core:
+    build: .
+    container_name: ocaml-app-container
+    image: ocaml-project
+    volumes:
+      - .:/home/opam/app
+    working_dir: /home/opam/app

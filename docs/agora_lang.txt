@@ -1,0 +1,127 @@
+agora_lang
+
+syntax example:
+
+```
+contract SimpleToken {
+  public owner: String;
+  public balances: Map<Address, Int>;
+
+  event Transfer(from: Address, to: Address, amount: Int);
+
+  init(initialSupply: Int) {
+    owner = msg.sender;
+    balances[owner] = initialSupply;
+  }
+
+  public function transfer(to: Address, amount: Int) {
+    require(balances[msg.sender] >= amount, "insufficient balance");
+    balances[msg.sender] -= amount;
+    balances[to] += amount;
+    
+    emit Transfer(msg.sender, to, amount);
+  }
+
+  // comment example
+  public show function balanceOf(account: Address) -> Int {
+    return balances[account];
+  }
+}
+```
+
+structs and nested mappings:
+
+```
+contract MultiToken {
+  struct Token {
+    id: Int,
+    name: String,
+    symbol: String
+  }
+
+  public balances: Map<Address, Map<Token, Int>>;
+
+  public function setBalance(user: Address, token: TokenID, amount: Int) {
+    balances[user][token] = amount;
+  }
+
+  public view function balanceOf(user: Address, token: TokenID) -> Int {
+    return balances[user][token];
+  }
+
+}
+
+```
+
+visibility:
+
+```
+contract Example {
+  public owner: Address;                 // accessible from anywhere
+  private totalSupply: Int;              // accessible only within this contract
+  internal balances: Map<Address, Int>;  // accessible within this contract or derived contracts
+}
+```
+
+inheritance:
+
+```
+contract Ownable {
+  public owner: Address;
+
+  init() {
+    owner = msg.sender;
+  }
+
+  public function onlyOwner() {
+    require(msg.sender == owner, "caller is not the owner");
+  }
+}
+
+contract Token is Ownable {
+  public balances: Map<Address, Int>;
+
+  init(initialSupply: Int) {
+    Ownable.init();
+    balances[owner] = initialSupply;
+  }
+
+  public function transfer(to: Address, amount: Int) {
+    Ownable.onlyOwner();
+    require(balances[owner] >= amount, "Insufficient balance");
+    balances[owner] -= amount;
+    balances[to] += amount;
+  }
+}
+```
+
+```
+interface Token {
+  function transfer(to: Address, amount: Int);
+  function balanceOf(account: Address) -> Int;
+}
+
+contract TestToken is Token {
+  public balances: Map<Address, Int>;
+
+  init(initialSupply: Int) {
+    balances[msg.sender] = initialSupply;
+  }
+
+  public function transfer(to: Address, amount: Int) {
+    require(balances[msg.sender] >= amount, "Insufficient balance");
+    balances[msg.sender] -= amount;
+    balances[to] += amount;
+  }
+
+  public view function balanceOf(account: Address) -> Int {
+    return balances[account];
+  }
+}
+
+contract Exchange {
+  public view function checkBalance(token: Contract<Token>, user: Address) -> Int {
+    return token.balanceOf(user);
+  }
+}
+```

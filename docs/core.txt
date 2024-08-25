@@ -1,0 +1,13 @@
+core protocol
+------------------------
+
+- consensus by (proof-of-stake or proof-of-work)
+
+- transactions:
+	- normal currency transaction (user -> user)
+	- contract creation (user -> 0x00)
+	- contract execution (user -> contract_add)
+
+- state:
+	- account state (funds, nonce, storage, codeHash)
+	- contract storage (key => val)

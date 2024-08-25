@@ -1,0 +1,4 @@
+(executable
+ (public_name agora_core)
+ (name main)
+ (libraries agora_core))
