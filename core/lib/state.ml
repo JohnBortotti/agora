@@ -1,4 +1,6 @@
 module RLP = struct
+  type t = [ `String of string | `List of t list ]
+
   let int_to_bytes n =
     let rec aux n acc =
       if n = 0 then acc
@@ -81,7 +83,7 @@ module MKPTrie = struct
   
   type trie = node option
 
-  let rec string_of_node (node: node option) (level: int) = 
+  let rec string_of_node node level =
     let indent = String.make (level * 2) ' ' in
     match node with
       | Some (Leaf (k, v)) ->
@@ -106,7 +108,7 @@ module MKPTrie = struct
         Printf.sprintf "%sBranch (val: %s):\n%s" indent (match value with Some v -> v | None -> "<>") children_str
       | None -> Printf.sprintf "%s<>" indent
 
-  let string_to_nibbles (key: string) : int list =
+  let string_to_nibbles key =
     let nibbles = ref [] in
     String.iter (fun c ->
       let byte = Char.code c in
@@ -180,4 +182,3 @@ module MKPTrie = struct
     insert_aux t (string_to_nibbles key) value
 
 end
-
