@@ -24,7 +24,7 @@ let hex_to_bin hex_str =
   in
   hex_to_bits (List.of_seq (String.to_seq hex_str))
 
-let proof_of_work (message: string) (difficulty: int) =
+let proof_of_work message difficulty =
   let rec find_nonce nonce =
     let full_message = message ^ string_of_int nonce in
     let hash = to_hex (digest_string full_message) in
