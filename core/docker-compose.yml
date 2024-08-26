@@ -6,3 +6,6 @@ services:
     volumes:
       - .:/home/opam/app
     working_dir: /home/opam/app
+    ports: 
+      - "8080:8080"
+    network_mode: "host"

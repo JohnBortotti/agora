@@ -8,6 +8,9 @@ RUN sudo apt-get update && sudo apt-get install -y \
     pkg-config \
     && opam install -y dune cryptokit \
     && opam install -y dune digestif \
+    && opam install -y dune lwt \
+		&& opam install cohttp-lwt-unix cohttp-async \
+		&& opam install yojson \
     && sudo apt-get clean
 
 WORKDIR /home/opam/app
