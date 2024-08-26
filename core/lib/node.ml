@@ -77,6 +77,14 @@ let server node =
         body |> Cohttp_lwt.Body.to_string >>= fun body ->
         handle_transaction_request node body >>= fun () ->
         Server.respond_string ~status:`OK ~body:"Transaction received" ()
+    | (`GET, "/transactions") ->
+        Lwt_mvar.take node.transaction_pool >>= fun pool ->
+          let tx_str = List.map (fun (tx, _) ->
+            transaction_to_json_string tx
+          ) pool in
+          let response_body = Printf.sprintf "transaction_pool: [\n%s\n]\n" (String.concat ",\n" tx_str) in
+          Lwt_mvar.put node.transaction_pool pool >>= fun () ->
+          Server.respond_string ~status:`OK ~body:response_body ()
     | _ ->
         Server.respond_string ~status:`Not_found ~body:"Not found" ()
   in

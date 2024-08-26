@@ -49,3 +49,18 @@ let string_of_transaction (tx: transaction) : string =
   "nonce: " ^ string_of_int tx.nonce ^ "\n" ^
   "payload: " ^ tx.payload ^ "\n" ^
   "signature: " ^ tx.signature
+
+let transaction_to_json (tx: transaction) : Yojson.Basic.t =
+  `Assoc [
+    ("sender", `String tx.sender);
+    ("receiver", `String tx.receiver);
+    ("amount", `Int tx.amount);
+    ("gas_limit", `Int tx.gas_limit);
+    ("gas_price", `Int tx.gas_price);
+    ("nonce", `Int tx.nonce);
+    ("payload", `String tx.payload);
+    ("signature", `String tx.signature)
+  ]
+
+let transaction_to_json_string (tx: transaction) : string =
+  transaction_to_json tx |> Yojson.Basic.to_string
