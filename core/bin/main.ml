@@ -20,6 +20,7 @@ let () =
 
   let node = {
     transaction_pool = Lwt_mvar.create [];
+    blockchain = Lwt_mvar.create [];
     global_state = None;
   } in
   run_node node

@@ -5,7 +5,7 @@ node implementation:
     - [ ] contract storage
   - [ ] main loop
     - [x] handle incoming transactions
-      - [ ] validate tx
+      - [x] validate tx pool
       - [x] append on transaction_pool
     - [x] list transaction_pool (debug)
     - [ ] mine
@@ -26,6 +26,7 @@ open Cohttp_lwt_unix
 
 type node = {
   transaction_pool: (Transaction.transaction * bool) list Lwt_mvar.t;
+  blockchain: node list Lwt_mvar.t;
   global_state: MKPTrie.trie
 }
 
@@ -36,12 +37,27 @@ let add_transaction pool tx =
   
 let validate_transaction _tx = true
 
-(* let validate_transaction_pool pool = *)
-(*   Lwt_mvar.take pool >>= fun current_pool -> *)
-(*     let new_pool = List.map (fun (tx, verified) ->  *)
-(*       if not verified then (tx, validate_transaction tx) else (tx, verified) *)
-(*     ) current_pool in *)
-(*     Lwt_mvar.put pool new_pool *)
+let rec validate_transaction_pool node =
+  print_endline "pool validation";
+  Lwt_mvar.take node.transaction_pool >>= fun current_pool ->
+    let new_pool = List.filter_map (fun (tx, verified) -> 
+      if not verified then 
+        if validate_transaction tx then (
+          print_endline "verifying tx";
+          Some (tx, true)
+        )
+        else (
+          print_endline "tx invalid";
+          None
+        )
+      else (
+        print_endline "tx already verified";
+        Some (tx, verified)
+      )
+    ) current_pool in
+    let* () = Lwt_mvar.put node.transaction_pool new_pool in
+    let* () = Lwt_unix.sleep 4.0 in
+    validate_transaction_pool node
 
 let transaction_of_json json: Transaction.transaction =
   let open Yojson.Basic.Util in
@@ -89,7 +105,7 @@ let mine_block transactions prev_block difficulty miner_addr =
       mine (nonce + 1)
     in mine 0
 
-let server node =
+let http_server node =
   let callback _conn req body =
     let uri = req |> Request.uri |> Uri.path in
     match (Request.meth req, uri) with
@@ -114,6 +130,7 @@ let server node =
 let run_node node =
   let main_loop =
     Lwt.join [
-      server node
+      validate_transaction_pool node;
+      http_server node
     ] in
   Lwt_main.run main_loop
