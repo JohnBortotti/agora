@@ -4,9 +4,19 @@ node implementation:
     - [ ] account global state (funds, nonce, storageRoot, codeHash)
     - [ ] contract storage
   - [ ] main loop
-    - [ ] handle incoming transactions -> validate and append on transaction_pool
-    - [ ] handle incoming block proposal -> validate block and propagate it
-    - [ ] compute nonce -> after N transactions or X ms
+    - [x] handle incoming transactions
+      - [ ] validate tx
+      - [x] append on transaction_pool
+    - [x] list transaction_pool (debug)
+    - [ ] mine
+      - [ ] filter validated txs
+      - [ ] write and hash block
+      - [ ] compute nonce
+      - [ ] broadcast block
+    - [ ] handle incoming block proposal 
+      - [ ] suspend currenct block
+      - [ ] validate block
+      - [ ] broadcast new block
  *)
 open Transaction
 open State
@@ -15,30 +25,25 @@ open Lwt.Syntax
 open Cohttp_lwt_unix
 
 type node = {
-  transaction_pool: (transaction * bool) list Lwt_mvar.t;
+  transaction_pool: (Transaction.transaction * bool) list Lwt_mvar.t;
   global_state: MKPTrie.trie
 }
 
 let add_transaction pool tx =
-  (* 
-     first we insert (tx, false), wich represents a non-verified transaction, 
-     a task will be spawned to verify transactions and set this value to true,
-     this will be used to prioritize verified tx when proposing a block
-   *)
   Lwt_mvar.take pool >>= fun current_pool ->
   let updated_pool = (tx, false) :: current_pool in
   Lwt_mvar.put pool updated_pool
   
 let validate_transaction _tx = true
 
-let validate_transaction_pool pool =
-  Lwt_mvar.take pool >>= fun current_pool ->
-    let new_pool = List.map (fun (tx, verified) -> 
-      if not verified then (tx, validate_transaction tx) else (tx, verified)
-    ) current_pool in
-    Lwt_mvar.put pool new_pool
+(* let validate_transaction_pool pool = *)
+(*   Lwt_mvar.take pool >>= fun current_pool -> *)
+(*     let new_pool = List.map (fun (tx, verified) ->  *)
+(*       if not verified then (tx, validate_transaction tx) else (tx, verified) *)
+(*     ) current_pool in *)
+(*     Lwt_mvar.put pool new_pool *)
 
-let transaction_of_json json: transaction =
+let transaction_of_json json: Transaction.transaction =
   let open Yojson.Basic.Util in
   {
     sender = json |> member "sender" |> to_string;
@@ -54,9 +59,6 @@ let transaction_of_json json: transaction =
 let handle_transaction_request (node: node) (body: string) =
   let json = Yojson.Basic.from_string body in
   let tx = transaction_of_json json in
-
-  print_endline (string_of_transaction tx); print_endline"";
-
   if validate_transaction tx then
     add_transaction node.transaction_pool tx
   else
@@ -69,7 +71,6 @@ let get_valid_transactions pool =
   Lwt.return (List.map fst valid_transactions)
 
 let server node =
-  print_endline "running http server...\n";
   let callback _conn req body =
     let uri = req |> Request.uri |> Uri.path in
     match (Request.meth req, uri) with
@@ -80,7 +81,7 @@ let server node =
     | (`GET, "/transactions") ->
         Lwt_mvar.take node.transaction_pool >>= fun pool ->
           let tx_str = List.map (fun (tx, _) ->
-            transaction_to_json_string tx
+            Transaction.transaction_to_json_string tx
           ) pool in
           let response_body = Printf.sprintf "transaction_pool: [\n%s\n]\n" (String.concat ",\n" tx_str) in
           Lwt_mvar.put node.transaction_pool pool >>= fun () ->

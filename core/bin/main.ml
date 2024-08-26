@@ -1,7 +1,14 @@
 (*
 TODO:
   - [x] write and sign transaction
+    - [ ] transaction.mli
+    - [ ] test transaction.ml
+  - [ ] tests state.ml
+    - [ ] test RLP
+    - [ ] test MKPT
   - [ ] node
+    - [ ] finish
+    - [ ] test
   - [ ] consensus (forks and conflicts)
   - [ ] vm and contracts
  *)
