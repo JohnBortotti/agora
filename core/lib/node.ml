@@ -70,6 +70,25 @@ let get_valid_transactions pool =
   let* () = Lwt_mvar.put pool current_pool in
   Lwt.return (List.map fst valid_transactions)
 
+let mine_block transactions prev_block difficulty miner_addr =
+  let open Block in
+  let rec mine nonce =
+    let candidate_block = {
+      index = prev_block.index + 1;
+      previous_hash = prev_block.hash;
+      timestamp = Unix.time ();
+      transactions = transactions;
+      miner = miner_addr;
+      nonce = nonce;
+      hash = ""
+    } in
+    let candidate_hash = hash_block { candidate_block with hash = "" } in 
+    if is_valid_pow candidate_hash difficulty then
+      { candidate_block with hash = candidate_hash }
+    else
+      mine (nonce + 1)
+    in mine 0
+
 let server node =
   let callback _conn req body =
     let uri = req |> Request.uri |> Uri.path in
