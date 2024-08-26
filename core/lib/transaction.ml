@@ -84,9 +84,9 @@ module Block = struct
   }
 
   let string_of_block block =
-    let txs = List.map Transaction.string_of_transaction block.transactions |> String.concat ",\n " in
+    let txs = List.map Transaction.transaction_to_json_string block.transactions |> String.concat ",\n " in
     Printf.sprintf "Block {\n  index: %d;\n  previous_hash: %s;\n  timestamp: %f;
-    \n  transactions: [\n  %s\n  ];\n miner: %s;\n nonce: %d;\n  hash: %s\n}"
+    transactions: [\n  %s\n  ];\n miner: %s;\n nonce: %d;\n  hash: %s\n}"
     block.index
     block.previous_hash
     block.timestamp

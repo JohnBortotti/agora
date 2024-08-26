@@ -9,9 +9,11 @@ node implementation:
       - [x] append on transaction_pool
     - [x] list transaction_pool (debug)
     - [ ] mine
-      - [ ] filter validated txs
-      - [ ] write and hash block
-      - [ ] compute nonce
+      - [x] filter validated txs
+      - [x] write and hash block
+      - [x] compute nonce
+      - [ ] calculate difficulty based on prev blocks
+      - [ ] avoid "Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->"
       - [ ] broadcast block
     - [ ] handle incoming block proposal 
       - [ ] suspend currenct block
@@ -26,7 +28,8 @@ open Cohttp_lwt_unix
 
 type node = {
   transaction_pool: (Transaction.transaction * bool) list Lwt_mvar.t;
-  blockchain: node list Lwt_mvar.t;
+  blockchain: Block.block list Lwt_mvar.t;
+  miner_addr: string;
   global_state: MKPTrie.trie
 }
 
@@ -38,7 +41,7 @@ let add_transaction pool tx =
 let validate_transaction _tx = true
 
 let rec validate_transaction_pool node =
-  print_endline "pool validation";
+  print_endline "\npool validation";
   Lwt_mvar.take node.transaction_pool >>= fun current_pool ->
     let new_pool = List.filter_map (fun (tx, verified) -> 
       if not verified then 
@@ -89,6 +92,7 @@ let get_valid_transactions pool =
 let mine_block transactions prev_block difficulty miner_addr =
   let open Block in
   let rec mine nonce =
+    (* print_endline (Printf.sprintf "mining nonce: %i" nonce); *)
     let candidate_block = {
       index = prev_block.index + 1;
       previous_hash = prev_block.hash;
@@ -105,11 +109,40 @@ let mine_block transactions prev_block difficulty miner_addr =
       mine (nonce + 1)
     in mine 0
 
+let mining_routine node = 
+  let threshold = 2 in
+  let time_delay = 10.0 in
+  let rec loop () =
+    Lwt_unix.sleep time_delay >>= fun () ->
+      Lwt_mvar.take node.transaction_pool >>= fun curr_pool ->
+        let validated_transactions, remaining_transactions = 
+          List.partition (fun (_, verified) -> verified) curr_pool in
+        if List.length validated_transactions >= threshold then (
+          print_endline "\nstarted mining block\n";
+          let transactions_to_mine = List.map fst validated_transactions in
+          Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->
+            let prev_block = List.hd curr_blockchain in
+            let difficulty = 3 in
+            let miner_addr = node.miner_addr in
+            let mined_block = mine_block transactions_to_mine prev_block difficulty miner_addr in
+            let* () = Lwt_mvar.put node.transaction_pool remaining_transactions in
+            print_endline "\nBlock mined:\n"; 
+            print_endline (Block.string_of_block mined_block);
+          loop ()
+        ) else (
+          print_endline "\nmine pass...\n";
+          let* () = Lwt_mvar.put node.transaction_pool curr_pool in
+          loop ()
+          )
+    in
+    loop ()
+
 let http_server node =
   let callback _conn req body =
     let uri = req |> Request.uri |> Uri.path in
     match (Request.meth req, uri) with
     | (`POST, "/transaction") ->
+        print_endline "\ntransaction received\n";
         body |> Cohttp_lwt.Body.to_string >>= fun body ->
         handle_transaction_request node body >>= fun () ->
         Server.respond_string ~status:`OK ~body:"Transaction received" ()
@@ -131,6 +164,7 @@ let run_node node =
   let main_loop =
     Lwt.join [
       validate_transaction_pool node;
+      mining_routine node;
       http_server node
     ] in
   Lwt_main.run main_loop
