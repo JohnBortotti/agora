@@ -1,7 +1,7 @@
 (*
 TODO:
   - [x] write and sign transaction
-    - [ ] transaction.mli
+    - [x] transaction.mli
     - [ ] test transaction.ml
   - [ ] tests state.ml
     - [ ] test RLP
