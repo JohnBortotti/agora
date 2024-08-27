@@ -42,4 +42,6 @@ module Block : sig
   val hash_block: block -> string
   val is_valid_pow: string -> int -> bool
   val validate_block: block -> block -> int -> bool
+  val block_to_json: block -> Yojson.Basic.t
+  val block_to_json_string: block -> string
 end

@@ -97,6 +97,20 @@ module Block = struct
     block.difficulty
     block.hash
 
+  let block_to_json block =
+    `Assoc [
+      ("index", `Int block.index);
+      ("previous_hash", `String block.previous_hash);
+      ("timestamp", `Float block.timestamp);
+      ("transactions", `List (List.map Transaction.transaction_to_json block.transactions));
+      ("nonce", `Int block.nonce);
+      ("hash", `String block.hash);
+      ("difficulty", `Int block.difficulty)
+    ]
+
+  let block_to_json_string block =
+    block_to_json block |> Yojson.Basic.to_string
+
   let hash_block block =
     let transactions_str = String.concat "" (List.map (fun tx ->
       Transaction.string_of_transaction_compact tx
