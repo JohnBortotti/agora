@@ -14,12 +14,15 @@ node implementation:
       - [x] compute nonce
       - [x] calculate difficulty based on prev blocks
       - [x] append mined_block
+      - [ ] node.mining (flag)
       - [ ] avoid "Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->" -> use a mutex instead
+      - [ ] validate_block exceptions
       - [ ] broadcast block
     - [ ] handle incoming block proposal 
       - [ ] suspend currenct block
       - [ ] validate block
       - [ ] broadcast new block
+    - [ ] global state
  *)
 open Transaction
 open State
@@ -30,6 +33,7 @@ open Cohttp_lwt_unix
 type node = {
   transaction_pool: (Transaction.transaction * bool) list Lwt_mvar.t;
   blockchain: Block.block list Lwt_mvar.t;
+  mining: bool Lwt_mvar.t;
   miner_addr: string;
   global_state: MKPTrie.trie
 }
@@ -76,6 +80,19 @@ let transaction_of_json json: Transaction.transaction =
     signature = ""
   }
 
+let block_of_json json: Block.block =
+  let open Yojson.Basic.Util in
+  {
+    index = json |> member "index" |> to_int;
+    previous_hash = json |> member "previous_hash" |> to_string;
+    timestamp = json |> member "timestamp" |> to_float;
+    transactions = json |> member "transactions" |> to_list |> List.map transaction_of_json;
+    miner = json |> member "miner" |> to_string;
+    nonce = json |> member "nonce" |> to_int;
+    hash = json |> member "hash" |> to_string;
+    difficulty = json |> member "difficulty" |> to_int;
+  }
+
 let handle_transaction_request (node: node) (body: string) =
   let json = Yojson.Basic.from_string body in
   let tx = transaction_of_json json in
@@ -84,22 +101,17 @@ let handle_transaction_request (node: node) (body: string) =
   else
     Lwt.return_unit
 
-let get_valid_transactions pool =
-  Lwt_mvar.take pool >>= fun current_pool ->
-  let valid_transactions = List.filter (fun (_, is_valid) -> is_valid) current_pool in
-  let* () = Lwt_mvar.put pool current_pool in
-  Lwt.return (List.map fst valid_transactions)
-
-let calculate_difficulty prev_block =
-  let open Block in
-  let target_block_time = 20.0 in
-  let current_time = Unix.time () -. prev_block.timestamp in
-  let adjustment_factor = 
-    if current_time < target_block_time then 1.2
-    else if current_time > target_block_time then 0.9
-    else 1.1
-  in
-  int_of_float (float_of_int prev_block.difficulty *. adjustment_factor)
+let handle_block_proposal_request node body =
+  let received_block = Yojson.Basic.from_string body |> block_of_json in
+  Lwt_mvar.take node.blockchain >>= fun curr_chain ->
+  let prev_block = List.hd curr_chain in
+  if Block.validate_block received_block prev_block then
+    let new_chain = received_block :: curr_chain in
+    let* () = Lwt_mvar.put node.blockchain new_chain in
+    Lwt.return_true
+  else 
+    let* () = Lwt_mvar.put node.blockchain curr_chain in
+    Lwt.return_false 
 
 let mine_block transactions prev_block difficulty miner_addr =
   let open Block in
@@ -135,7 +147,7 @@ let mining_routine node =
           let transactions_to_mine = List.map fst validated_transactions in
           Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->
             let prev_block = List.hd curr_blockchain in
-            let difficulty = calculate_difficulty prev_block in
+            let difficulty = Block.calculate_difficulty prev_block in
             let miner_addr = node.miner_addr in
             let mined_block = mine_block transactions_to_mine prev_block difficulty miner_addr in
             print_endline "\nBlock mined:\n"; 
@@ -161,6 +173,13 @@ let http_server node =
         body |> Cohttp_lwt.Body.to_string >>= fun body ->
         handle_transaction_request node body >>= fun () ->
         Server.respond_string ~status:`OK ~body:"Transaction received" ()
+    | (`POST, "/block") ->
+        print_endline "\nblock proposal received\n";
+        body |> Cohttp_lwt.Body.to_string >>= fun body ->
+        let* result = handle_block_proposal_request node body in
+        (match result with
+        | true -> Server.respond_string ~status:`OK ~body:"Block received is valid" ()
+        | false -> Server.respond_string ~status:`OK ~body:"Block received invalid" ())
     | (`GET, "/transaction_pool") ->
         Lwt_mvar.take node.transaction_pool >>= fun pool ->
           let tx_str = List.map (fun (tx, _) ->

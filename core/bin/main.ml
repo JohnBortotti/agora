@@ -31,6 +31,7 @@ let () =
   let node = {
     transaction_pool = Lwt_mvar.create [];
     blockchain = Lwt_mvar.create [{ genesis with hash = Block.hash_block genesis }];
+    mining = Lwt_mvar.create true;
     miner_addr = "0x0123";
     global_state = None;
   } in

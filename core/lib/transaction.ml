@@ -130,16 +130,32 @@ module Block = struct
   let is_valid_pow hash difficulty =
     String.sub hash 0 difficulty = String.make difficulty '0'
 
-  let validate_block block prev_block difficulty =
+  let calculate_difficulty prev_block =
+    let target_block_time = 20.0 in
+    let current_time = Unix.time () -. prev_block.timestamp in
+    let adjustment_factor = 
+      if current_time < target_block_time then 1.2
+      else if current_time > target_block_time then 0.9
+      else 1.1
+    in
+    int_of_float (float_of_int prev_block.difficulty *. adjustment_factor)
+
+  let validate_block block prev_block =
     let expected_hash = hash_block block in
+    let difficulty = calculate_difficulty prev_block in
     if block.hash <> expected_hash then 
-      false
+      (print_endline "invalid block hash";
+      false)
     else if block.previous_hash <> prev_block.hash then
-      false
+      (print_endline "invalid previous_block hash";
+      false)
     else if not (is_valid_pow block.hash difficulty) then
-      false
+      (print_endline "invalid pow";
+      false)
     else if block.index <> prev_block.index + 1 then
-      false
+      (print_endline "invalid block index";
+      false)
     else
-      true
+      (print_endline "block is valid";
+      true)
 end
