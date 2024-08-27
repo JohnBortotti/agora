@@ -15,9 +15,10 @@ node implementation:
       - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
       - [ ] broadcast mined block
     - [ ] handle incoming block proposal 
-      - [ ] suspend current block mining (node.mining)
+      - [x] suspend current block mining (node.mining)
       - [x] validate block
-      - [ ] broadcast new block (if valid)
+      - [ ] broadcast proposed block (if valid)
+    - [ ] validate transaction
  *)
 open Transaction
 open State
@@ -39,7 +40,7 @@ let add_transaction pool tx =
   Lwt_mvar.put pool updated_pool
   
 let rec validate_transaction_pool node =
-  print_endline "\npool validation";
+  print_endline "pool validation\n";
   Lwt_mvar.take node.transaction_pool >>= fun current_pool ->
     let new_pool = List.filter_map (fun (tx, verified) -> 
       if not verified then 
@@ -127,7 +128,19 @@ let mine_block transactions prev_block difficulty miner_addr =
 let mining_routine node = 
   let threshold = 2 in
   let time_delay = 10.0 in
-  let rec loop () =
+  let rec aux () = 
+    Lwt_mvar.take node.mining >>= fun mining ->
+    if mining then
+      (print_endline "mining enabled\n";
+      let* () = Lwt_mvar.put node.mining mining in 
+      loop ())
+    else
+      (print_endline "mining disabled\n";
+      let* () = Lwt_mvar.put node.mining mining in 
+      Lwt_unix.sleep time_delay >>= fun () ->
+      aux ())
+  and
+  loop () =
     Lwt_unix.sleep time_delay >>= fun () ->
       Lwt_mvar.take node.transaction_pool >>= fun curr_pool ->
         let validated_transactions, remaining_transactions = 
@@ -145,14 +158,14 @@ let mining_routine node =
             let* () = Lwt_mvar.put node.transaction_pool remaining_transactions in
             let new_chain = mined_block :: curr_blockchain in
             let* () = Lwt_mvar.put node.blockchain new_chain in
-          loop ()
+          aux ()
         ) else (
-          print_endline "\nmine pass...\n";
+          print_endline "mine pass...\n";
           let* () = Lwt_mvar.put node.transaction_pool curr_pool in
-          loop ()
+          aux ()
           )
     in
-    loop ()
+    aux ()
 
 let http_server node =
   let callback _conn req body =
@@ -165,8 +178,14 @@ let http_server node =
         Server.respond_string ~status:`OK ~body:"Transaction received" ()
     | (`POST, "/block") ->
         print_endline "\nblock proposal received\n";
+        let* _ = Lwt_mvar.take node.mining in
+        let* () = Lwt_mvar.put node.mining false in
+        print_endline "mining = false\n";
         body |> Cohttp_lwt.Body.to_string >>= fun body ->
         let* result = handle_block_proposal_request node body in
+        let* _ = Lwt_mvar.take node.mining in
+        let* () = Lwt_mvar.put node.mining true in
+        print_endline "mining = true\n";
         (match result with
         | true -> Server.respond_string ~status:`OK ~body:"Block received is valid" ()
         | false -> Server.respond_string ~status:`OK ~body:"Block received invalid" ())

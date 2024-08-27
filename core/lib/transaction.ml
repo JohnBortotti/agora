@@ -146,18 +146,18 @@ module Block = struct
     let expected_hash = hash_block block in
     let difficulty = calculate_difficulty prev_block in
     if block.hash <> expected_hash then 
-      (print_endline "invalid block hash";
+      (print_endline "invalid block hash\n";
       false)
     else if block.previous_hash <> prev_block.hash then
-      (print_endline "invalid previous_block hash";
+      (print_endline "invalid previous_block hash\n";
       false)
     else if not (is_valid_pow block.hash difficulty) then
-      (print_endline "invalid pow";
+      (print_endline "invalid pow\n";
       false)
     else if block.index <> prev_block.index + 1 then
-      (print_endline "invalid block index";
+      (print_endline "invalid block index\n";
       false)
     else
-      (print_endline "block is valid";
+      (print_endline "block is valid\n";
       true)
 end

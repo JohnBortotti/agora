@@ -1,8 +1,5 @@
 (*
 TODO:
-  - [x] write and sign transaction
-    - [x] transaction.mli
-    - [ ] test transaction.ml
   - [ ] tests 
     - [ ] test state.ml
     - [ ] test transaction.ml
@@ -12,6 +9,7 @@ TODO:
     - [ ] test
   - [ ] consensus (forks and conflicts)
   - [ ] vm and contracts
+  - [ ] logging
  *)
 
 open Agora_core.Node
