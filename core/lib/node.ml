@@ -19,6 +19,7 @@ node implementation:
       - [x] validate block
       - [ ] broadcast proposed block (if valid)
     - [ ] validate transaction
+    - [ ] gossip protocol
  *)
 open Transaction
 open State
@@ -31,7 +32,8 @@ type node = {
   blockchain: Block.block list Lwt_mvar.t;
   mining: bool Lwt_mvar.t;
   miner_addr: string;
-  global_state: MKPTrie.trie
+  global_state: MKPTrie.trie;
+  known_peers: string list Lwt_mvar.t;
 }
 
 let add_transaction pool tx =
@@ -179,24 +181,30 @@ let http_server node =
     | (`POST, "/block") ->
         print_endline "\nblock proposal received\n";
         let* _ = Lwt_mvar.take node.mining in
-        let* () = Lwt_mvar.put node.mining false in
+        let* _ = Lwt_mvar.put node.mining false in
         print_endline "mining = false\n";
         body |> Cohttp_lwt.Body.to_string >>= fun body ->
         let* result = handle_block_proposal_request node body in
         let* _ = Lwt_mvar.take node.mining in
-        let* () = Lwt_mvar.put node.mining true in
+        let* _ = Lwt_mvar.put node.mining true in
         print_endline "mining = true\n";
         (match result with
         | true -> Server.respond_string ~status:`OK ~body:"Block received is valid" ()
         | false -> Server.respond_string ~status:`OK ~body:"Block received invalid" ())
+    | (`GET, "/gossip") ->
+        let* peers_list = Lwt_mvar.take node.known_peers in
+        let* () = Lwt_mvar.put node.known_peers peers_list in
+        let json_peers = `List (List.map (fun peer -> `String peer) peers_list) in
+        let json_body = Yojson.Basic.to_string json_peers in
+        print_endline "gossip\n";
+        Server.respond_string ~status:`OK ~body:json_body ()
     | (`GET, "/transaction_pool") ->
         Lwt_mvar.take node.transaction_pool >>= fun pool ->
-          let tx_str = List.map (fun (tx, _) ->
-            Transaction.transaction_to_json_string tx
-          ) pool in
-          let response_body = Printf.sprintf "transaction_pool: [\n%s\n]\n" (String.concat ",\n" tx_str) in
-          Lwt_mvar.put node.transaction_pool pool >>= fun () ->
-          Server.respond_string ~status:`OK ~body:response_body ()
+        let tx_json_list = List.map (fun (tx, _) -> 
+        Transaction.transaction_to_json tx) pool in
+        let json_body = `List tx_json_list |> Yojson.Basic.to_string in
+        Lwt_mvar.put node.transaction_pool pool >>= fun () ->
+        Server.respond_string ~status:`OK ~body:json_body ()
     | (`GET, "/chain") ->
         Lwt_mvar.take node.blockchain >>= fun chain ->
           let chain_str = List.map (fun bl -> 

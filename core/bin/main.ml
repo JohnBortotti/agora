@@ -33,5 +33,6 @@ let () =
     mining = Lwt_mvar.create true;
     miner_addr = "0x0123";
     global_state = None;
+    known_peers = Lwt_mvar.create [];
   } in
   run_node node

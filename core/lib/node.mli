@@ -6,7 +6,8 @@ type node = {
   blockchain: Block.block list Lwt_mvar.t;
   mining: bool Lwt_mvar.t;
   miner_addr: string;
-  global_state: MKPTrie.trie
+  global_state: MKPTrie.trie;
+  known_peers: string list Lwt_mvar.t;
 }
 
 val add_transaction: (Transaction.transaction * bool) list Lwt_mvar.t -> Transaction.transaction -> unit Lwt.t
