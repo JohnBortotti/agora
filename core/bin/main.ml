@@ -19,7 +19,7 @@ open Agora_core.Transaction
 let () = 
   print_endline "running node...\n";
   let genesis: Block.block = {
-    index = 1;
+    index = 0;
     previous_hash = "";
     timestamp = Unix.time ();
     transactions = [];

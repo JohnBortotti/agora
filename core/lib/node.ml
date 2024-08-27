@@ -12,10 +12,10 @@ node implementation:
       - [x] filter validated txs
       - [x] write and hash block
       - [x] compute nonce
-      - [ ] calculate difficulty based on prev blocks
-      - [ ] avoid "Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->"
+      - [x] calculate difficulty based on prev blocks
+      - [x] append mined_block
+      - [ ] avoid "Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->" -> use a mutex instead
       - [ ] broadcast block
-      - [ ] deadlock (pool validation vs mining)
     - [ ] handle incoming block proposal 
       - [ ] suspend currenct block
       - [ ] validate block
@@ -104,7 +104,7 @@ let calculate_difficulty prev_block =
 let mine_block transactions prev_block difficulty miner_addr =
   let open Block in
   let rec mine nonce =
-    print_endline (Printf.sprintf "mining nonce: %i" nonce);
+    (* print_endline (Printf.sprintf "mining nonce: %i" nonce); *)
     let candidate_block = {
       index = prev_block.index + 1;
       previous_hash = prev_block.hash;
@@ -138,9 +138,11 @@ let mining_routine node =
             let difficulty = calculate_difficulty prev_block in
             let miner_addr = node.miner_addr in
             let mined_block = mine_block transactions_to_mine prev_block difficulty miner_addr in
-            let* () = Lwt_mvar.put node.transaction_pool remaining_transactions in
             print_endline "\nBlock mined:\n"; 
             print_endline (Block.string_of_block mined_block);
+            let* () = Lwt_mvar.put node.transaction_pool remaining_transactions in
+            let new_chain = mined_block :: curr_blockchain in
+            let* () = Lwt_mvar.put node.blockchain new_chain in
           loop ()
         ) else (
           print_endline "\nmine pass...\n";
