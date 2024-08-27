@@ -207,12 +207,10 @@ let http_server node =
         Server.respond_string ~status:`OK ~body:json_body ()
     | (`GET, "/chain") ->
         Lwt_mvar.take node.blockchain >>= fun chain ->
-          let chain_str = List.map (fun bl -> 
-            Block.block_to_json_string bl
-          ) chain in
-          let response_body = Printf.sprintf "blockchain: [\n%s\n]\n" (String.concat ",\n" chain_str) in
-          Lwt_mvar.put node.blockchain chain >>= fun () ->
-          Server.respond_string ~status:`OK ~body:response_body ()
+        let chain_json_list = List.map (fun bl -> Block.block_to_json bl) chain in
+        let json_body = `List chain_json_list |> Yojson.Basic.to_string in
+        Lwt_mvar.put node.blockchain chain >>= fun () ->
+        Server.respond_string ~status:`OK ~body:json_body ()
     | _ ->
         Server.respond_string ~status:`Not_found ~body:"Not found" ()
   in
