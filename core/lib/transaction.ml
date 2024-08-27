@@ -42,6 +42,8 @@ module Transaction = struct
     let trimmed_decrypted_tx = trim_signature hashed_tx decrypted_tx_hex in
     string_equal hashed_tx trimmed_decrypted_tx
 
+  let validate_transaction _tx = true
+
   let string_of_transaction tx =
     "sender: " ^ tx.sender ^ "\n" ^
     "receiver: " ^ tx.receiver ^ "\n" ^

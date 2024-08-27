@@ -14,13 +14,12 @@ node implementation:
       - [x] compute nonce
       - [x] calculate difficulty based on prev blocks
       - [x] append mined_block
-      - [ ] node.mining (flag)
       - [ ] avoid "Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->" -> use a mutex instead
       - [ ] validate_block exceptions
       - [ ] broadcast block
     - [ ] handle incoming block proposal 
-      - [ ] suspend currenct block
-      - [ ] validate block
+      - [ ] suspend current block mining (node.mining)
+      - [x] validate block
       - [ ] broadcast new block
     - [ ] global state
  *)
@@ -43,14 +42,12 @@ let add_transaction pool tx =
   let updated_pool = (tx, false) :: current_pool in
   Lwt_mvar.put pool updated_pool
   
-let validate_transaction _tx = true
-
 let rec validate_transaction_pool node =
   print_endline "\npool validation";
   Lwt_mvar.take node.transaction_pool >>= fun current_pool ->
     let new_pool = List.filter_map (fun (tx, verified) -> 
       if not verified then 
-        if validate_transaction tx then (
+        if Transaction.validate_transaction tx then (
           print_endline "verifying tx";
           Some (tx, true)
         )
@@ -96,10 +93,7 @@ let block_of_json json: Block.block =
 let handle_transaction_request (node: node) (body: string) =
   let json = Yojson.Basic.from_string body in
   let tx = transaction_of_json json in
-  if validate_transaction tx then
-    add_transaction node.transaction_pool tx
-  else
-    Lwt.return_unit
+  add_transaction node.transaction_pool tx
 
 let handle_block_proposal_request node body =
   let received_block = Yojson.Basic.from_string body |> block_of_json in

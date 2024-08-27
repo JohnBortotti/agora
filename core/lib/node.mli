@@ -10,7 +10,6 @@ type node = {
 }
 
 val add_transaction: (Transaction.transaction * bool) list Lwt_mvar.t -> Transaction.transaction -> unit Lwt.t
-val validate_transaction: Transaction.transaction -> bool
 val validate_transaction_pool: node -> unit Lwt.t
 val mine_block: Transaction.transaction list -> Block.block -> int -> string -> Block.block
 val mining_routine: node -> 'a Lwt.t

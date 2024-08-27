@@ -20,6 +20,7 @@ module Transaction : sig
   val sign_transaction: transaction -> RSA.key -> string
   val trim_signature: string -> string -> string
   val verify_transaction_signature: transaction -> RSA.key -> bool
+  val validate_transaction: transaction -> bool
   val string_of_transaction: transaction -> string
   val string_of_transaction_compact: transaction -> string
   val transaction_to_json: transaction -> Yojson.Basic.t
