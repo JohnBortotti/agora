@@ -37,31 +37,31 @@ type node = {
 }
 
 let add_transaction pool tx =
-  Lwt_mvar.take pool >>= fun current_pool ->
+  let* current_pool = Lwt_mvar.take pool in
   let updated_pool = (tx, false) :: current_pool in
   Lwt_mvar.put pool updated_pool
   
 let rec validate_transaction_pool node =
   print_endline "pool validation\n";
-  Lwt_mvar.take node.transaction_pool >>= fun current_pool ->
-    let new_pool = List.filter_map (fun (tx, verified) -> 
-      if not verified then 
-        if Transaction.validate_transaction tx then (
-          print_endline "verifying tx";
-          Some (tx, true)
-        )
-        else (
-          print_endline "tx invalid";
-          None
-        )
-      else (
-        print_endline "tx already verified";
-        Some (tx, verified)
+  let* current_pool = Lwt_mvar.take node.transaction_pool in
+  let new_pool = List.filter_map (fun (tx, verified) -> 
+    if not verified then 
+      if Transaction.validate_transaction tx then (
+        print_endline "verifying tx";
+        Some (tx, true)
       )
-    ) current_pool in
-    let* () = Lwt_mvar.put node.transaction_pool new_pool in
-    let* () = Lwt_unix.sleep 4.0 in
-    validate_transaction_pool node
+      else (
+        print_endline "tx invalid";
+        None
+      )
+    else (
+      print_endline "tx already verified";
+      Some (tx, verified)
+    )
+  ) current_pool in
+  let* _ = Lwt_mvar.put node.transaction_pool new_pool in
+  let* _ = Lwt_unix.sleep 4.0 in
+  validate_transaction_pool node
 
 let transaction_of_json json: Transaction.transaction =
   let open Yojson.Basic.Util in
@@ -100,16 +100,15 @@ let handle_block_proposal_request node body =
   let prev_block = List.hd curr_chain in
   if Block.validate_block received_block prev_block then
     let new_chain = received_block :: curr_chain in
-    let* () = Lwt_mvar.put node.blockchain new_chain in
+    let* _ = Lwt_mvar.put node.blockchain new_chain in
     Lwt.return_true
   else 
-    let* () = Lwt_mvar.put node.blockchain curr_chain in
+    let* _ = Lwt_mvar.put node.blockchain curr_chain in
     Lwt.return_false 
 
 let mine_block transactions prev_block difficulty miner_addr =
   let open Block in
   let rec mine nonce =
-    (* print_endline (Printf.sprintf "mining nonce: %i" nonce); *)
     let candidate_block = {
       index = prev_block.index + 1;
       previous_hash = prev_block.hash;
@@ -131,15 +130,15 @@ let mining_routine node =
   let threshold = 2 in
   let time_delay = 10.0 in
   let rec aux () = 
-    Lwt_mvar.take node.mining >>= fun mining ->
+    let* mining = Lwt_mvar.take node.mining in
     if mining then
       (print_endline "mining enabled\n";
-      let* () = Lwt_mvar.put node.mining mining in 
+      let* _ = Lwt_mvar.put node.mining mining in 
       loop ())
     else
       (print_endline "mining disabled\n";
-      let* () = Lwt_mvar.put node.mining mining in 
-      Lwt_unix.sleep time_delay >>= fun () ->
+      let* _ = Lwt_mvar.put node.mining mining in 
+      let* _ = Lwt_unix.sleep time_delay in
       aux ())
   and
   loop () =
@@ -157,13 +156,13 @@ let mining_routine node =
             let mined_block = mine_block transactions_to_mine prev_block difficulty miner_addr in
             print_endline "\nBlock mined:\n"; 
             print_endline (Block.string_of_block mined_block);
-            let* () = Lwt_mvar.put node.transaction_pool remaining_transactions in
+            let* _ = Lwt_mvar.put node.transaction_pool remaining_transactions in
             let new_chain = mined_block :: curr_blockchain in
-            let* () = Lwt_mvar.put node.blockchain new_chain in
+            let* _ = Lwt_mvar.put node.blockchain new_chain in
           aux ()
         ) else (
           print_endline "mine pass...\n";
-          let* () = Lwt_mvar.put node.transaction_pool curr_pool in
+          let* _ = Lwt_mvar.put node.transaction_pool curr_pool in
           aux ()
           )
     in
@@ -193,7 +192,7 @@ let http_server node =
         | false -> Server.respond_string ~status:`OK ~body:"Block received invalid" ())
     | (`GET, "/gossip") ->
         let* peers_list = Lwt_mvar.take node.known_peers in
-        let* () = Lwt_mvar.put node.known_peers peers_list in
+        let* _ = Lwt_mvar.put node.known_peers peers_list in
         let json_peers = `List (List.map (fun peer -> `String peer) peers_list) in
         let json_body = Yojson.Basic.to_string json_peers in
         print_endline "gossip\n";
