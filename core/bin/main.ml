@@ -3,9 +3,10 @@ TODO:
   - [x] write and sign transaction
     - [x] transaction.mli
     - [ ] test transaction.ml
-  - [ ] tests state.ml
-    - [ ] test RLP
-    - [ ] test MKPT
+  - [ ] tests 
+    - [ ] test state.ml
+    - [ ] test transaction.ml
+    - [x] test pow.ml
   - [ ] node
     - [ ] finish
     - [ ] test

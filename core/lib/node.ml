@@ -5,23 +5,19 @@ node implementation:
     - [ ] contract storage
   - [ ] main loop
     - [x] handle incoming transactions
-      - [x] validate tx pool
-      - [x] append on transaction_pool
-    - [x] list transaction_pool (debug)
+    - [x] list transaction_pool
     - [ ] mine
       - [x] filter validated txs
       - [x] write and hash block
       - [x] compute nonce
       - [x] calculate difficulty based on prev blocks
       - [x] append mined_block
-      - [ ] avoid "Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->" -> use a mutex instead
-      - [ ] validate_block exceptions
-      - [ ] broadcast block
+      - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
+      - [ ] broadcast mined block
     - [ ] handle incoming block proposal 
       - [ ] suspend current block mining (node.mining)
       - [x] validate block
-      - [ ] broadcast new block
-    - [ ] global state
+      - [ ] broadcast new block (if valid)
  *)
 open Transaction
 open State

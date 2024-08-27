@@ -1,2 +1,4 @@
 (test
- (name test_agora_core))
+ (name test_pow)
+ (libraries agora_core alcotest)
+)
