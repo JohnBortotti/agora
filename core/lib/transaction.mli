@@ -34,6 +34,7 @@ module Block : sig
     transactions: Transaction.transaction list;
     miner: string;
     nonce: int;
+    difficulty: int;
     hash: string;
   }
 

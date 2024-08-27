@@ -15,6 +15,7 @@ node implementation:
       - [ ] calculate difficulty based on prev blocks
       - [ ] avoid "Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->"
       - [ ] broadcast block
+      - [ ] deadlock (pool validation vs mining)
     - [ ] handle incoming block proposal 
       - [ ] suspend currenct block
       - [ ] validate block
@@ -89,10 +90,21 @@ let get_valid_transactions pool =
   let* () = Lwt_mvar.put pool current_pool in
   Lwt.return (List.map fst valid_transactions)
 
+let calculate_difficulty prev_block =
+  let open Block in
+  let target_block_time = 20.0 in
+  let current_time = Unix.time () -. prev_block.timestamp in
+  let adjustment_factor = 
+    if current_time < target_block_time then 1.2
+    else if current_time > target_block_time then 0.9
+    else 1.1
+  in
+  int_of_float (float_of_int prev_block.difficulty *. adjustment_factor)
+
 let mine_block transactions prev_block difficulty miner_addr =
   let open Block in
   let rec mine nonce =
-    (* print_endline (Printf.sprintf "mining nonce: %i" nonce); *)
+    print_endline (Printf.sprintf "mining nonce: %i" nonce);
     let candidate_block = {
       index = prev_block.index + 1;
       previous_hash = prev_block.hash;
@@ -100,6 +112,7 @@ let mine_block transactions prev_block difficulty miner_addr =
       transactions = transactions;
       miner = miner_addr;
       nonce = nonce;
+      difficulty = difficulty;
       hash = ""
     } in
     let candidate_hash = hash_block { candidate_block with hash = "" } in 
@@ -122,7 +135,7 @@ let mining_routine node =
           let transactions_to_mine = List.map fst validated_transactions in
           Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->
             let prev_block = List.hd curr_blockchain in
-            let difficulty = 3 in
+            let difficulty = calculate_difficulty prev_block in
             let miner_addr = node.miner_addr in
             let mined_block = mine_block transactions_to_mine prev_block difficulty miner_addr in
             let* () = Lwt_mvar.put node.transaction_pool remaining_transactions in
