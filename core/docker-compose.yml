@@ -1,11 +1,53 @@
 services:
-  core:
+  node1:
     build: .
-    container_name: ocaml-app-container
+    container_name: agora_node_1
     image: ocaml-project
-    volumes:
-      - .:/home/opam/app
+    environment:
+      - NODE_ADDR=http://node1:8080
+      - MINER_ADDR=1
+      - KNOWN_PEERS=http://node3:8080
+    # volumes:
+    #   - node1_build:/home/opam/app/_build
     working_dir: /home/opam/app
     ports: 
-      - "8080:8080"
-    network_mode: "host"
+      - "8081:8080"
+    networks:
+      - agora_network
+
+  node2:
+    build: .
+    container_name: agora_node_2
+    image: ocaml-project
+    environment:
+      - NODE_ADDR=http://node2:8080
+      - MINER_ADDR=2
+      - KNOWN_PEERS=http://node3:8080
+    working_dir: /home/opam/app
+    ports: 
+      - "8082:8080"
+    networks:
+      - agora_network
+
+  node3:
+    build: .
+    container_name: agora_node_3
+    image: ocaml-project
+    environment:
+      - NODE_ADDR=http://node3:8080
+      - MINER_ADDR=3
+      - KNOWN_PEERS=http://node1:8080,http://node2:8080
+    working_dir: /home/opam/app
+    ports: 
+      - "8083:8080"
+    networks:
+      - agora_network
+
+volumes:
+  node1_build:
+  node2_build:
+  node3_build:
+
+networks:
+  agora_network:
+    driver: bridge

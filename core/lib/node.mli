@@ -2,6 +2,7 @@ open Transaction
 open State
 
 type node = {
+  address: string;
   transaction_pool: (Transaction.transaction * bool) list Lwt_mvar.t;
   blockchain: Block.block list Lwt_mvar.t;
   mining: bool Lwt_mvar.t;

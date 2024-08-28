@@ -28,6 +28,7 @@ open Lwt.Syntax
 open Cohttp_lwt_unix
 
 type node = {
+  address: string;
   transaction_pool: (Transaction.transaction * bool) list Lwt_mvar.t;
   blockchain: Block.block list Lwt_mvar.t;
   mining: bool Lwt_mvar.t;
@@ -126,43 +127,6 @@ let mine_block transactions prev_block difficulty miner_addr =
       mine (nonce + 1)
     in mine 0
 
-let rec gossip_routine node =
-  let time_delay = 3.0 in
-  print_endline "gossip routine\n";
-
-  let* current_nodes = Lwt_mvar.take node.known_peers in
-
-  if List.length current_nodes > 0 then (
-    print_endline "start gossip:\n";
-    List.iter (fun i -> print_endline i; print_endline"\n") current_nodes;
-    let random_node = List.nth current_nodes (Random.int (List.length current_nodes)) in
-    let uri = Uri.of_string (random_node ^ "/gossip") in
-    let* (resp, body) = Client.get uri in
-    match Cohttp.Response.status resp with
-    | `OK ->
-      let* body_str = Cohttp_lwt.Body.to_string body in
-      let json = Yojson.Basic.from_string body_str in
-      let random_node_peers = 
-        json |> Yojson.Basic.Util.to_list |> List.map Yojson.Basic.to_string in
-      let merged_peers = List.sort_uniq compare (current_nodes @ random_node_peers) in
-      print_endline "end gossip:\n";
-      List.iter (fun i -> print_endline i) merged_peers;
-      let* _ = Lwt_mvar.put node.known_peers merged_peers in
-      let* _ = Lwt_unix.sleep time_delay in
-      gossip_routine node
-    | status ->
-      Printf.printf "Failed to get gossip from %s. Status: %s\n"
-      random_node (Cohttp.Code.string_of_status status);
-      let* _ = Lwt_mvar.put node.known_peers current_nodes in
-      let* _ = Lwt_unix.sleep time_delay in
-      gossip_routine node
-  ) else (
-    let* _ = Lwt_mvar.put node.known_peers current_nodes in
-    print_endline "know_nodes is empty\n";
-    let* _ = Lwt_unix.sleep time_delay in
-    gossip_routine node
-  )
-
 let mining_routine node = 
   let threshold = 2 in
   let time_delay = 10.0 in
@@ -229,10 +193,11 @@ let http_server node =
         | false -> Server.respond_string ~status:`OK ~body:"Block received invalid" ())
     | (`GET, "/gossip") ->
         let* peers_list = Lwt_mvar.take node.known_peers in
-        let* _ = Lwt_mvar.put node.known_peers peers_list in
-        let json_peers = `List (List.map (fun peer -> `String peer) peers_list) in
+        let json_peers = `List (List.map 
+          (fun peer -> `String (String.trim peer)) peers_list) 
+        in
         let json_body = Yojson.Basic.to_string json_peers in
-        print_endline "gossip\n";
+        let* _ = Lwt_mvar.put node.known_peers peers_list in
         Server.respond_string ~status:`OK ~body:json_body ()
     | (`GET, "/transaction_pool") ->
         Lwt_mvar.take node.transaction_pool >>= fun pool ->
@@ -258,7 +223,6 @@ let run_node node =
     Lwt.join [
       validate_transaction_pool node;
       mining_routine node;
-      gossip_routine node;
       http_server node
     ] in
   Lwt_main.run main_loop

@@ -18,4 +18,4 @@ WORKDIR /home/opam/app
 
 COPY . .
 
-CMD ["bash"]
+CMD ["dune", "exec", "bin/main.exe"]
