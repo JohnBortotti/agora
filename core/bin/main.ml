@@ -10,6 +10,7 @@ TODO:
   - [ ] consensus (forks and conflicts)
   - [ ] vm and contracts
   - [ ] logging
+  - [ ] configs via .env
  *)
 
 open Agora_core.Node
