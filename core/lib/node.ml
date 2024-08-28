@@ -13,7 +13,7 @@ node implementation:
       - [x] calculate difficulty based on prev blocks
       - [x] append mined_block
       - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
-      - [ ] broadcast mined block
+      - [x] broadcast mined block
     - [ ] handle incoming block proposal 
       - [x] suspend current block mining (node.mining)
       - [x] validate block
@@ -95,14 +95,37 @@ let handle_transaction_request (node: node) (body: string) =
   let tx = transaction_of_json json in
   add_transaction node.transaction_pool tx
 
+let broadcast_block peers_list block =
+  let block_json = Block.block_to_json block |> Yojson.Basic.to_string in
+
+  let broadcast_to_peer peer =
+    let uri = Uri.of_string (peer ^ "/block") in
+    let headers = Cohttp.Header.init_with "Content-Type" "application/json" in
+    let* response, body = Cohttp_lwt_unix.Client.post
+      ~headers
+      ~body:(Cohttp_lwt.Body.of_string block_json)
+      uri
+    in
+    match Cohttp.Response.status response with
+    | `OK -> Lwt.return_unit
+    | _ ->
+      let* body_str = Cohttp_lwt.Body.to_string body in
+      Printf.printf "Failed to send block to %s: %s\n" peer body_str;
+      Lwt.return_unit
+  in
+  Lwt_list.iter_p broadcast_to_peer peers_list
+
 let handle_block_proposal_request node body =
   let received_block = Yojson.Basic.from_string body |> block_of_json in
-  Lwt_mvar.take node.blockchain >>= fun curr_chain ->
+
+  let* curr_chain = Lwt_mvar.take node.blockchain in
   let prev_block = List.hd curr_chain in
-  if Block.validate_block received_block prev_block then
+
+  if Block.validate_block received_block prev_block then (
+    print_endline "appending received block";
     let new_chain = received_block :: curr_chain in
     let* _ = Lwt_mvar.put node.blockchain new_chain in
-    Lwt.return_true
+    Lwt.return_true)
   else 
     let* _ = Lwt_mvar.put node.blockchain curr_chain in
     Lwt.return_false 
@@ -121,9 +144,9 @@ let mine_block transactions prev_block difficulty miner_addr =
       hash = ""
     } in
     let candidate_hash = hash_block { candidate_block with hash = "" } in 
-    if is_valid_pow candidate_hash difficulty then
+    if is_valid_pow candidate_hash difficulty then (
       { candidate_block with hash = candidate_hash }
-    else
+    ) else
       mine (nonce + 1)
     in mine 0
 
@@ -143,31 +166,37 @@ let mining_routine node =
       aux ())
   and
   loop () =
-    Lwt_unix.sleep time_delay >>= fun () ->
-      Lwt_mvar.take node.transaction_pool >>= fun curr_pool ->
-        let validated_transactions, remaining_transactions = 
-          List.partition (fun (_, verified) -> verified) curr_pool in
-        if List.length validated_transactions >= threshold then (
-          print_endline "\nstarted mining block\n";
-          let transactions_to_mine = List.map fst validated_transactions in
-          Lwt_mvar.take node.blockchain >>= fun curr_blockchain ->
-            let prev_block = List.hd curr_blockchain in
-            let difficulty = Block.calculate_difficulty prev_block in
-            let miner_addr = node.miner_addr in
-            let mined_block = mine_block transactions_to_mine prev_block difficulty miner_addr in
-            print_endline "\nBlock mined:\n"; 
-            print_endline (Block.string_of_block mined_block);
-            let* _ = Lwt_mvar.put node.transaction_pool remaining_transactions in
-            let new_chain = mined_block :: curr_blockchain in
-            let* _ = Lwt_mvar.put node.blockchain new_chain in
-          aux ()
-        ) else (
-          print_endline "mine pass...\n";
-          let* _ = Lwt_mvar.put node.transaction_pool curr_pool in
-          aux ()
-          )
-    in
-    aux ()
+    let* _ = Lwt_unix.sleep time_delay in
+    let* curr_pool = Lwt_mvar.take node.transaction_pool in
+    let validated_transactions, remaining_transactions = 
+        List.partition (fun (_, verified) -> verified) curr_pool in
+    if List.length validated_transactions >= threshold then (
+      (* print_endline "\nstarted mining block\n"; *)
+
+      let transactions_to_mine = List.map fst validated_transactions in
+      let* curr_blockchain = Lwt_mvar.take node.blockchain in
+      let* _ = Lwt_mvar.put node.transaction_pool remaining_transactions in
+
+      let prev_block = List.hd curr_blockchain in
+      let difficulty = Block.calculate_difficulty prev_block in
+      let miner_addr = node.miner_addr in
+      let mined_block = mine_block transactions_to_mine prev_block difficulty miner_addr in
+
+      let new_chain = mined_block :: curr_blockchain in
+      let* _ = Lwt_mvar.put node.blockchain new_chain in
+      
+      let* peers_list = Lwt_mvar.take node.known_peers in
+      let* _ = Lwt_mvar.put node.known_peers peers_list in
+      let* _ = broadcast_block peers_list mined_block in
+
+      aux ()
+    ) else (
+      print_endline "mine pass...\n";
+      let* _ = Lwt_mvar.put node.transaction_pool curr_pool in
+      aux ()
+    )
+  in
+  aux ()
 
 let http_server node =
   let callback _conn req body =
@@ -189,8 +218,9 @@ let http_server node =
         let* _ = Lwt_mvar.put node.mining true in
         print_endline "mining = true\n";
         (match result with
-        | true -> Server.respond_string ~status:`OK ~body:"Block received is valid" ()
-        | false -> Server.respond_string ~status:`OK ~body:"Block received invalid" ())
+        | true -> (
+          Server.respond_string ~status:`OK ~body:"Block received is valid" ())
+        | false -> Server.respond_string ~status:`OK ~body:"Block received is invalid" ())
     | (`GET, "/gossip") ->
         let* peers_list = Lwt_mvar.take node.known_peers in
         let json_peers = `List (List.map 

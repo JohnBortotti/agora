@@ -106,6 +106,7 @@ module Block = struct
       ("timestamp", `Float block.timestamp);
       ("transactions", `List (List.map Transaction.transaction_to_json block.transactions));
       ("nonce", `Int block.nonce);
+      ("miner", `String block.miner);
       ("hash", `String block.hash);
       ("difficulty", `Int block.difficulty)
     ]
