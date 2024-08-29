@@ -231,6 +231,11 @@ let mining_routine node =
   aux ()
 
 let http_server node =
+  let cors_headers = Cohttp.Header.of_list [
+    ("Access-Control-Allow-Origin", "*");
+    ("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    ("Access-Control-Allow-Headers", "Content-Type");
+  ] in
   let callback _conn req body =
     let uri = req |> Request.uri |> Uri.path in
     match (Request.meth req, uri) with
@@ -284,7 +289,7 @@ let http_server node =
         let chain_json_list = List.map (fun bl -> Block.block_to_json bl) chain in
         let json_body = `List chain_json_list |> Yojson.Basic.to_string in
         Lwt_mvar.put node.blockchain chain >>= fun () ->
-        Server.respond_string ~status:`OK ~body:json_body ()
+        Server.respond_string ~headers:cors_headers ~status:`OK ~body:json_body ()
     | _ ->
         Server.respond_string ~status:`Not_found ~body:"Not found" ()
   in
