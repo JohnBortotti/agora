@@ -23,7 +23,7 @@ const TransactionList: React.FC = () => {
 				const transactions = blocks.reduce((acc: any[], block: any) => {
 					const txs = block.transactions.map((tx: any) => {
 						return {
-							hash: block.index + tx.nonce,
+							hash: tx.hash,
 							sender: tx.sender,
 							receiver: tx.receiver,
 							amount: tx.amount,

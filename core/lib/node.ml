@@ -72,14 +72,15 @@ let rec validate_transaction_pool node =
 let transaction_of_json json: Transaction.transaction =
   let open Yojson.Basic.Util in
   {
+    hash = json |> member "hash" |> to_string;
     sender = json |> member "sender" |> to_string;
     receiver = json |> member "receiver" |> to_string;
     amount = json |> member "amount" |> to_int;
-    gas_limit = 1;
-    gas_price = 1;
-    nonce = 1;
-    payload = "";
-    signature = ""
+    gas_limit = json |> member "gas_limit" |> to_int;
+    gas_price = json |> member "gas_price" |> to_int;
+    nonce = json |> member "nonce" |> to_int;
+    payload = json |> member "payload" |> to_string;
+    signature = json |> member "signature" |> to_string;
   }
 
 let block_of_json json: Block.block =

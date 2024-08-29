@@ -6,6 +6,7 @@ module Transaction : sig
   type nonce = int
 
   type transaction = {
+    hash: string;
     sender: address;
     receiver: address;
     amount: int;

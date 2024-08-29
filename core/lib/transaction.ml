@@ -7,6 +7,7 @@ module Transaction = struct
   type nonce = int
 
   type transaction = {
+    hash: string;
     sender: address;
     receiver: address;
     amount: int;
@@ -45,6 +46,7 @@ module Transaction = struct
   let validate_transaction _tx = true
 
   let string_of_transaction tx =
+    "hash: " ^ tx.hash ^ "\n" ^      
     "sender: " ^ tx.sender ^ "\n" ^
     "receiver: " ^ tx.receiver ^ "\n" ^
     "amount: " ^ string_of_int tx.amount ^ "\n" ^
@@ -60,6 +62,7 @@ module Transaction = struct
 
   let transaction_to_json tx =
     `Assoc [
+      ("hash", `String tx.hash);
       ("sender", `String tx.sender);
       ("receiver", `String tx.receiver);
       ("amount", `Int tx.amount);
