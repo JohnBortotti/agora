@@ -8,7 +8,7 @@ services:
       - MINER_ADDR=1
       - KNOWN_PEERS=http://node3:8080
     # volumes:
-    #   - node1_build:/home/opam/app/_build
+      # - ./:/home/opam/app
     working_dir: /home/opam/app
     ports: 
       - "8081:8080"
@@ -43,10 +43,10 @@ services:
     networks:
       - agora_network
 
-volumes:
-  node1_build:
-  node2_build:
-  node3_build:
+# volumes:
+#   node1_build:
+#   node2_build:
+#   node3_build:
 
 networks:
   agora_network:

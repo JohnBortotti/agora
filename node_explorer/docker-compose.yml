@@ -4,7 +4,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - REACT_APP_NODES=
+      # lovelace is the dns addr for my test server, replace it with your custom addr
+      - REACT_APP_NODES=http://lovelace:8081,http://lovelace:8082,http://lovelace:8083
     volumes:
       - ./:/app
     networks:
