@@ -5,8 +5,6 @@ TODO:
     - [ ] test transaction.ml
     - [x] test pow.ml
   - [ ] node
-    - [ ] finish
-    - [ ] test
   - [ ] consensus (forks and conflicts)
   - [ ] vm and contracts
   - [ ] logging

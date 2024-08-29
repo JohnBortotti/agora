@@ -21,6 +21,9 @@ node implementation:
     - [ ] optimize block broadcasting (a lot of repeated requests)
     - [ ] validate transaction
     - [ ] gossip protocol
+    - [ ] paginate /chain endpoint
+    - [ ] add transactions.hash field
+    - [ ] add transactions.timestamp field
  *)
 open Transaction
 open State
