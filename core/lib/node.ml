@@ -14,10 +14,11 @@ node implementation:
       - [x] append mined_block
       - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
       - [x] broadcast mined block
-    - [ ] handle incoming block proposal 
+    - [x] handle incoming block proposal 
       - [x] suspend current block mining (node.mining)
       - [x] validate block
-      - [ ] broadcast proposed block (if valid)
+      - [x] broadcast proposed block (if valid)
+    - [ ] optimize block broadcasting (a lot of repeated requests)
     - [ ] validate transaction
     - [ ] gossip protocol
  *)
@@ -35,6 +36,7 @@ type node = {
   miner_addr: string;
   global_state: MKPTrie.trie;
   known_peers: string list Lwt_mvar.t;
+  blocks_to_broadcast: Block.block list Lwt_mvar.t;
 }
 
 let add_transaction pool tx =
@@ -98,6 +100,9 @@ let handle_transaction_request (node: node) (body: string) =
 let broadcast_block peers_list block =
   let block_json = Block.block_to_json block |> Yojson.Basic.to_string in
 
+  print_endline "broadcast_block:\n";
+  List.iter (fun peer -> print_endline peer) peers_list;
+
   let broadcast_to_peer peer =
     let uri = Uri.of_string (peer ^ "/block") in
     let headers = Cohttp.Header.init_with "Content-Type" "application/json" in
@@ -107,13 +112,37 @@ let broadcast_block peers_list block =
       uri
     in
     match Cohttp.Response.status response with
-    | `OK -> Lwt.return_unit
+    | `OK -> print_endline "block broadcast was accepted"; Lwt.return_unit
+    | `Bad_request -> print_endline "block broadcast was rejected"; Lwt.return_unit
     | _ ->
       let* body_str = Cohttp_lwt.Body.to_string body in
-      Printf.printf "Failed to send block to %s: %s\n" peer body_str;
+      Printf.printf "failed to send block to %s: %s\n" peer body_str;
       Lwt.return_unit
   in
   Lwt_list.iter_p broadcast_to_peer peers_list
+
+let rec broadcast_block_routine node =
+  let time_delay = 6. in
+  let* _ = Lwt_unix.sleep time_delay in
+  let* blocks = Lwt_mvar.take node.blocks_to_broadcast in
+  let* _ = Lwt_mvar.put node.blocks_to_broadcast [] in
+  
+  print_endline "looking for blocks to broadcast\n";
+
+  if List.length blocks > 0 then (
+
+    print_endline "broadcasting blocks routine\n";
+
+    let* peers = Lwt_mvar.take node.known_peers in
+    let* _ = Lwt_mvar.put node.known_peers peers in
+    print_endline "broadcast to peers:\n";
+    let* _ = Lwt_list.iter_p (fun block -> 
+      broadcast_block peers block;
+    ) blocks in
+    broadcast_block_routine node
+  ) else (
+    broadcast_block_routine node
+  )
 
 let handle_block_proposal_request node body =
   let received_block = Yojson.Basic.from_string body |> block_of_json in
@@ -209,18 +238,29 @@ let http_server node =
         Server.respond_string ~status:`OK ~body:"Transaction received" ()
     | (`POST, "/block") ->
         print_endline "\nblock proposal received\n";
+
         let* _ = Lwt_mvar.take node.mining in
         let* _ = Lwt_mvar.put node.mining false in
+
         print_endline "mining = false\n";
+
         body |> Cohttp_lwt.Body.to_string >>= fun body ->
         let* result = handle_block_proposal_request node body in
         let* _ = Lwt_mvar.take node.mining in
         let* _ = Lwt_mvar.put node.mining true in
+
         print_endline "mining = true\n";
+
         (match result with
         | true -> (
+          let block = Yojson.Basic.from_string body |> block_of_json in
+          let*  curr_blocks = Lwt_mvar.take node.blocks_to_broadcast in
+          let all_blocks = block :: curr_blocks in
+          let* _ = Lwt_mvar.put node.blocks_to_broadcast all_blocks in
           Server.respond_string ~status:`OK ~body:"Block received is valid" ())
-        | false -> Server.respond_string ~status:`OK ~body:"Block received is invalid" ())
+        | false -> 
+          Server.respond_string ~status:`Bad_request ~body:"Block received is invalid" ()
+        )
     | (`GET, "/gossip") ->
         let* peers_list = Lwt_mvar.take node.known_peers in
         let json_peers = `List (List.map 
@@ -253,6 +293,7 @@ let run_node node =
     Lwt.join [
       validate_transaction_pool node;
       mining_routine node;
+      broadcast_block_routine node;
       http_server node
     ] in
   Lwt_main.run main_loop

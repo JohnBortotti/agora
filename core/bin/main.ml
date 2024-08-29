@@ -59,5 +59,6 @@ let () =
     miner_addr = miner_addr_env;
     global_state = None;
     known_peers = Lwt_mvar.create known_peers_env;
+    blocks_to_broadcast = Lwt_mvar.create [];
   } in
   run_node node
