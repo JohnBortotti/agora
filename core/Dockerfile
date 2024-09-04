@@ -1,4 +1,4 @@
-FROM ocaml/opam
+FROM ocaml/opam:latest
 
 RUN sudo apt-get update && sudo apt-get install -y \
     build-essential \
@@ -12,6 +12,8 @@ RUN sudo apt-get update && sudo apt-get install -y \
 		&& opam install cohttp-lwt-unix cohttp-async \
 		&& opam install yojson \
 		&& opam install alcotest \
+		&& sudo apt-get install libsecp256k1-dev -y \
+		&& opam install secp256k1 \
     && sudo apt-get clean
 
 WORKDIR /home/opam/app

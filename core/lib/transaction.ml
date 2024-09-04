@@ -1,5 +1,7 @@
 open Digestif.SHA256
-open Cryptokit
+(* open Cryptokit *)
+open Secp256k1
+open Bigarray
 
 module Transaction = struct 
   type address = string
@@ -26,24 +28,31 @@ module Transaction = struct
     in
     to_hex (digest_string data_to_hash)
 
-  let sign_transaction tx key =
-    let hashed_tx = hash_transaction tx in
-    transform_string (Hexa.encode()) (RSA.sign key hashed_tx)
+  let string_to_bigarray str =
+    let len = String.length str in
+    let ba = Array1.create char c_layout len in
+    for i = 0 to len - 1 do
+      Array1.set ba i str.[i]
+    done;
+    ba
 
-  let trim_signature tx signed_tx =
-    let expected_length = String.length tx in
-    let current_length = String.length signed_tx in
-    String.sub signed_tx (current_length - expected_length) expected_length
+  (* validate pk == tx.sender *)
+  let validate_transaction tx = 
+    let ctx = Context.create [Context.Sign;Context.Verify] in
+    let expected_hash = hash_transaction tx in
+    if tx.hash <> expected_hash then
+      false
+    else 
+      let tx_buffer = string_to_bigarray (hash_transaction tx) in
+      let tx_msg = Sign.msg_of_bytes_exn ~pos:0 tx_buffer in
 
-  let verify_transaction_signature tx key =
-    let hashed_tx = transform_string (Hexa.encode()) (hash_transaction tx) in
-    let signed_tx = transform_string (Hexa.decode()) tx.signature in
-    let decrypted_tx = RSA.unwrap_signature key signed_tx in
-    let decrypted_tx_hex = transform_string (Hexa.encode()) decrypted_tx in
-    let trimmed_decrypted_tx = trim_signature hashed_tx decrypted_tx_hex in
-    string_equal hashed_tx trimmed_decrypted_tx
+      let sign_buffer = string_to_bigarray tx.signature in
+      let recoverable_sign = Sign.read_recoverable_exn ctx ~recid:0 ~pos:0 sign_buffer in
+      let pk = Sign.recover_exn ctx ~signature:recoverable_sign ~msg:tx_msg in
 
-  let validate_transaction _tx = true
+      (match Sign.verify ctx ~pk ~msg:tx_msg ~signature:recoverable_sign with
+      | Ok true -> true
+      | _ -> false)
 
   let string_of_transaction tx =
     "hash: " ^ tx.hash ^ "\n" ^      
