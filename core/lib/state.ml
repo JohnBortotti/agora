@@ -207,7 +207,14 @@ module MKPTrie = struct
             | Some new_node -> Some (Extension (prefix, new_node))
             | None -> failwith "Unexpected None while inserting in Extension node")
           else 
-            failwith "EXTENSION NO"
+            let children = Array.make 16 None in
+            let remaining_prefix = list_sub prefix_nibbles common_prefix_len (List.length prefix_nibbles - common_prefix_len) in
+            let remaining_nibbles = list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len) in
+            let idx1 = List.hd remaining_prefix in
+            let idx2 = List.hd remaining_nibbles in
+            children.(idx1) <- Some next_node;
+            children.(idx2) <- Some (Leaf (nibbles_to_string (List.tl remaining_nibbles), RLP.encode value));
+            Some (Extension (nibbles_to_string (list_sub prefix_nibbles 0 common_prefix_len), Branch (children, None)))
       | Some (Branch (children, existing_value)) -> 
           (match existing_value with
           | None -> Printf.printf "no existing_value"
@@ -222,50 +229,6 @@ module MKPTrie = struct
               if hd >= 0 && hd < Array.length children then
                 children.(hd) <- insert_aux children.(hd) tl value;
               Some (Branch (children, existing_value))
-
-          (* failwith "BRANCH" *)
-      (* | Some (Leaf (k, v)) -> *)
-      (*     let key_nibbles = string_to_nibbles k in *)
-      (*     if key_nibbles = nibbles then *)
-      (*       Some (Leaf (k, RLP.encode value)) *)
-      (*     else *)
-      (*       let common_prefix_len = common_prefix_length key_nibbles nibbles in *)
-      (*       let common_prefix = list_sub nibbles 0 common_prefix_len in *)
-      (*       let remaining_key = list_sub key_nibbles common_prefix_len (List.length key_nibbles - common_prefix_len) in *)
-      (*       let remaining_nibbles = list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len) in *)
-      (*        *)
-      (*       if remaining_key = [] then *)
-      (*         Some (Branch (Array.make 16 None, Some (RLP.encode value))) *)
-      (*       else if remaining_nibbles = [] then *)
-      (*         Some (Branch (Array.make 16 None, Some (RLP.encode (RLP.decode v)))) *)
-      (*       else *)
-      (*         let branch = create_branch_node remaining_key remaining_nibbles (RLP.decode v) value in *)
-      (*         Some (Extension (nibbles_to_string common_prefix, branch)) *)
-      (* | Some (Extension (prefix, next_node)) -> *)
-      (*     let prefix_nibbles = string_to_nibbles prefix in *)
-      (*     let common_prefix_len = common_prefix_length prefix_nibbles nibbles in *)
-      (*     if common_prefix_len = List.length prefix_nibbles then *)
-      (*       match insert_aux  *)
-      (*         (Some next_node) (list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len))  *)
-      (*       value with *)
-      (*       | Some new_node -> Some (Extension (prefix, new_node)) *)
-      (*       | None -> failwith "Unexpected None while inserting in Extension node" *)
-      (*     else *)
-      (*       let new_branch = create_branch_node *)
-      (*         (list_sub prefix_nibbles common_prefix_len (List.length prefix_nibbles - common_prefix_len)) *)
-      (*         (list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len)) *)
-      (*         (RLP.decode (RLP.encode value)) *)
-      (*         value *)
-      (*       in *)
-      (*       Some (Extension (nibbles_to_string (list_sub prefix_nibbles 0 common_prefix_len), new_branch)) *)
-      (* | Some (Branch (children, existing_value)) ->  *)
-      (*     match nibbles with *)
-      (*     | [] ->  *)
-      (*         Some (Branch (children, Some (RLP.encode value))) *)
-      (*     | hd :: tl -> *)
-      (*         if hd >= 0 && hd < Array.length children then *)
-      (*           children.(hd) <- insert_aux children.(hd) tl value; *)
-      (*         Some (Branch (children, existing_value)) *)
     in
     insert_aux t (string_to_nibbles key) value
 

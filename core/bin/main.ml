@@ -45,7 +45,7 @@ let () =
     |> fun t -> insert t "test" (`String "test")
     |> fun t -> insert t "tes" (`String "tes")
     |> fun t -> insert t "testt" (`String "testt")
-    (* |> fun t -> insert t "john" (`String "john") *)
+    |> fun t -> insert t "john" (`String "john")
   in
   print_endline"";
   print_endline (string_of_node trie 0);
@@ -59,6 +59,7 @@ let () =
   print_key_nibbles "test";
   print_key_nibbles "tes";
   print_key_nibbles "testt";
+  print_key_nibbles "john";
 
   (* let _ = match lookup trie "tom" with *)
   (*   | None -> print_endline "\nNode not found\n" *)
