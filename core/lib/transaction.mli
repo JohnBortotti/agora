@@ -32,6 +32,7 @@ module Block : sig
     timestamp: float;
     transactions: Transaction.transaction list;
     miner: string;
+    state_root: string;
     nonce: int;
     difficulty: int;
     hash: string;

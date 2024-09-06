@@ -1,25 +1,27 @@
 (*
 node implementation:
-  - [ ] state 
-    - [ ] account global state (funds, nonce, storageRoot, codeHash)
-    - [ ] contract storage
-  - [ ] main loop
+  - [x] main loop
     - [x] handle incoming transactions
     - [x] list transaction_pool
-    - [ ] mine
+    - [x] mine
       - [x] filter validated txs
       - [x] write and hash block
       - [x] compute nonce
       - [x] calculate difficulty based on prev blocks
       - [x] append mined_block
-      - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
       - [x] broadcast mined block
     - [x] handle incoming block proposal 
       - [x] suspend current block mining (node.mining)
       - [x] validate block
       - [x] broadcast proposed block (if valid)
+  - [ ] state 
+    - [ ] account global state (funds, nonce, storageRoot, codeHash)
+    - [ ] contract storage
+  - fixes
+    - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
     - [ ] optimize block broadcasting (a lot of repeated requests)
-    - [ ] validate transaction
+    - [x] validate transaction
+    - [ ] singleton Secp256k1 context
     - [ ] broadcast transactions?
     - [ ] gossip protocol
     - [ ] paginate /chain endpoint
@@ -91,6 +93,7 @@ let block_of_json json: Block.block =
     timestamp = json |> member "timestamp" |> to_float;
     transactions = json |> member "transactions" |> to_list |> List.map transaction_of_json;
     miner = json |> member "miner" |> to_string;
+    state_root = json |> member "state_root" |> to_string;
     nonce = json |> member "nonce" |> to_int;
     hash = json |> member "hash" |> to_string;
     difficulty = json |> member "difficulty" |> to_int;
@@ -172,6 +175,7 @@ let mine_block transactions prev_block difficulty miner_addr =
       timestamp = Unix.time ();
       transactions = transactions;
       miner = miner_addr;
+      state_root = "";
       nonce = nonce;
       difficulty = difficulty;
       hash = ""

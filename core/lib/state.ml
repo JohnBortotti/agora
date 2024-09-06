@@ -85,28 +85,31 @@ module MKPTrie = struct
 
   let rec string_of_node node level =
     let indent = String.make (level * 2) ' ' in
+    let hex_of_string str =
+      String.concat "" (List.map (Printf.sprintf "%02x") (List.map Char.code (String.to_seq str |> List.of_seq)))
+    in
     match node with
-      | Some (Leaf (k, v)) ->
-        let decoded_value = match RLP.decode v with
-          | `String s -> s
-          | `List l -> "[" ^ (String.concat "; " (List.map (function `String s -> s | _ -> "<complex>") l)) ^ "]"
-          | _ -> "<complex>"
-        in
-        Printf.sprintf "Leaf -> (key: %s, value: %s)" k decoded_value
-      | Some (Extension (prefix, child)) ->
-        Printf.sprintf "Extension (key: %s):\n%s" (if String.length prefix > 0 then prefix else "<>") (string_of_node (Some child) (level+1))
-      | Some (Branch (children, value)) -> 
-        let children_str = Array.mapi (fun i child -> 
-          if Option.is_some child then
-            Printf.sprintf "%s[%x] -> %s" indent i (string_of_node child (level + 1))
-          else ""
-        ) children
-        |> Array.to_list
-        |> List.filter (fun s -> s <> "")
-        |> String.concat "\n"
-        in
-        Printf.sprintf "%sBranch (val: %s):\n%s" indent (match value with Some v -> v | None -> "<>") children_str
-      | None -> Printf.sprintf "%s<>" indent
+    | Some (Leaf (k, v)) ->
+      let decoded_value = match RLP.decode v with
+        | `String s -> s
+        | `List l -> "[" ^ (String.concat "; " (List.map (function `String s -> s | _ -> "<complex>") l)) ^ "]"
+        | _ -> "<complex>"
+      in
+      Printf.sprintf "Leaf -> (key: %s, value: %s)" (hex_of_string k) decoded_value
+    | Some (Extension (prefix, child)) ->
+      Printf.sprintf "Extension (key: %s):\n%s" (if String.length prefix > 0 then hex_of_string prefix else "<>") (string_of_node (Some child) (level+1))
+    | Some (Branch (children, value)) -> 
+      let children_str = Array.mapi (fun i child -> 
+        if Option.is_some child then
+          Printf.sprintf "%s[%x] -> %s" indent i (string_of_node child (level + 1))
+        else ""
+      ) children
+      |> Array.to_list
+      |> List.filter (fun s -> s <> "")
+      |> String.concat "\n"
+      in
+      Printf.sprintf "%sBranch (val: %s):\n%s" indent (match value with Some v -> v | None -> "<>") children_str
+    | None -> Printf.sprintf "%s<>" indent
 
   let string_to_nibbles key =
     let nibbles = ref [] in
@@ -116,13 +119,38 @@ module MKPTrie = struct
     ) key;
     !nibbles
 
-  let string_of_nibbles nibbles =
-    String.concat "" (List.map (Printf.sprintf "%x") nibbles)
+  let nibbles_to_string (nibbles: int list) : string =
+    let rec group_nibbles nibs acc =
+      match nibs with
+      | [] -> List.rev acc
+      | n1 :: n2 :: rest ->
+          let byte = (n1 lsl 4) lor n2 in
+          group_nibbles rest (Char.chr byte :: acc)
+      | [n1] ->
+          let byte = (n1 lsl 4) lor 0 in
+          group_nibbles [] (Char.chr byte :: acc)
+    in
+    let char_list = group_nibbles nibbles [] in
+    String.concat "" (List.map (String.make 1) char_list)
+
+  let compare_nibbles (n1: int list) (n2: int list) : bool =
+    List.for_all2 (fun a b -> a = b) n1 n2
 
   let rec common_prefix_length l1 l2 =
     match (l1, l2) with
     | (x :: xs, y :: ys) when x = y -> 1 + common_prefix_length xs ys
     | _ -> 0
+
+  let rec take n lst =
+    match n, lst with
+    | 0, _ | _, [] -> []
+    | n, x :: xs -> x :: take (n - 1) xs
+
+  let rec drop n lst =
+    match n, lst with
+    | 0, lst -> lst
+    | _, [] -> []
+    | n, _ :: xs -> drop (n - 1) xs
   
   let list_sub lst start len =
     let rec aux lst i len acc =
@@ -134,51 +162,139 @@ module MKPTrie = struct
   in
   aux lst 0 len []
 
-  let create_branch_node nibbles1 nibbles2 val1 val2 =
-    let children = Array.make 16 None in
-    children.(List.hd nibbles1) <- Some (Leaf (string_of_nibbles (List.tl nibbles1), RLP.encode val1));
-    children.(List.hd nibbles2) <- Some (Leaf (string_of_nibbles (List.tl nibbles2), RLP.encode val2));
-    Branch (children, None)
-
-  let insert (t: trie) (key) (value): trie =
+  let insert (t: trie) (key: string) (value: RLP.t): trie =
     let rec insert_aux node nibbles value =
       match node with
-        | None -> 
-            Some (Leaf (String.concat "" (List.map (Printf.sprintf "%x") nibbles), RLP.encode (value)))
-        | Some (Leaf (k, v)) ->
-            let key_nibbles = string_to_nibbles k in
-            if key_nibbles = nibbles then
-              Some (Leaf (k, RLP.encode value))
-            else
-              let common_prefix_len = common_prefix_length key_nibbles nibbles in
-              let common_prefix = list_sub nibbles 0 common_prefix_len in
-              let remaining_key = list_sub key_nibbles common_prefix_len (List.length key_nibbles - common_prefix_len) in
-              let remaining_nibbles = list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len) in
-              let branch = create_branch_node remaining_key remaining_nibbles (RLP.decode v) value in
-              Some (Extension (string_of_nibbles common_prefix, branch))
-        | Some (Extension (prefix, next_node)) ->
-            let prefix_nibbles = string_to_nibbles prefix in
-            let common_prefix_len = common_prefix_length prefix_nibbles nibbles in
-            if common_prefix_len = List.length prefix_nibbles then
-              match insert_aux (Some next_node) (list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len)) value with
-              | Some new_node -> Some (Extension (prefix, new_node))
-              | None -> failwith "Unexpected None while inserting in Extension node"
-            else
-              let new_branch = create_branch_node
-                (list_sub prefix_nibbles common_prefix_len (List.length prefix_nibbles - common_prefix_len))
-                (list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len))
-                (RLP.decode (RLP.encode value))
-                value
-              in
-              Some (Extension (string_of_nibbles (list_sub prefix_nibbles 0 common_prefix_len), new_branch))
-        | Some (Branch (children, existing_value)) -> 
-            match nibbles with
-            | [] -> Some (Branch (children, Some (RLP.encode value)))
-            | hd :: tl ->
-                let idx = hd in
-                children.(idx) <- insert_aux children.(idx) tl value;
-                Some (Branch (children, existing_value))
+      | None -> 
+          Some (Leaf (nibbles_to_string nibbles, RLP.encode value))
+      | Some (Leaf (k, v)) ->
+          let key_nibbles = string_to_nibbles k in
+          if key_nibbles = nibbles then 
+            Some (Leaf (k, RLP.encode value))
+          else
+            let common_prefix_len = common_prefix_length key_nibbles nibbles in
+            let common_prefix = list_sub nibbles 0 common_prefix_len in
+            let remaining_key = list_sub key_nibbles common_prefix_len (List.length key_nibbles - common_prefix_len) in
+            let remaining_nibbles = list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len) in
+
+            if remaining_key = [] then
+              let children = Array.make 16 None in
+              let idx = List.hd remaining_nibbles in
+              children.(idx) <- Some (Leaf (nibbles_to_string (List.tl remaining_nibbles), RLP.encode value));
+              let branch = Branch (children, Some (RLP.encode (RLP.decode v))) in
+              Some (Extension (nibbles_to_string (common_prefix), branch))
+            else if remaining_nibbles = [] then
+              let children = Array.make 16 None in
+              let idx = List.hd remaining_key in
+              children.(idx) <- Some (Leaf (nibbles_to_string (List.tl remaining_key), RLP.encode (RLP.decode v)));
+              let branch = Branch (children, Some (RLP.encode value)) in
+              Some (Extension (nibbles_to_string (common_prefix), branch))
+            else 
+              let children = Array.make 16 None in
+              let idx1 = List.hd remaining_key in
+              let idx2 = List.hd remaining_nibbles in
+              children.(idx1) <- Some (Leaf (nibbles_to_string (List.tl remaining_key), RLP.encode (RLP.decode v)));
+              children.(idx2) <- Some (Leaf (nibbles_to_string (List.tl remaining_nibbles), RLP.encode value));
+              let branch = Branch (children, None) in
+              Some (Extension (nibbles_to_string common_prefix, branch))
+      | Some (Extension (prefix, next_node)) ->
+          let prefix_nibbles = string_to_nibbles prefix in
+          let common_prefix_len = common_prefix_length prefix_nibbles nibbles in 
+          
+          if common_prefix_len = List.length prefix_nibbles then
+            let remaining_nibbles = list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len) in
+            (match insert_aux (Some next_node) remaining_nibbles value with
+            | Some new_node -> Some (Extension (prefix, new_node))
+            | None -> failwith "Unexpected None while inserting in Extension node")
+          else 
+            failwith "EXTENSION NO"
+      | Some (Branch (children, existing_value)) -> 
+          (match existing_value with
+          | None -> Printf.printf "no existing_value"
+          | Some v -> Printf.printf "existing_value %s\n" v);
+
+          match nibbles with
+          | [] -> Some (Branch (children, Some (RLP.encode value)))
+          | hd :: tl -> 
+              Printf.printf "hd nibble: %d\n" hd;
+              Printf.printf "children len %d\n" (Array.length children);
+              Printf.printf "children node: %s\n" (string_of_node children.(hd) 0);
+              if hd >= 0 && hd < Array.length children then
+                children.(hd) <- insert_aux children.(hd) tl value;
+              Some (Branch (children, existing_value))
+
+          (* failwith "BRANCH" *)
+      (* | Some (Leaf (k, v)) -> *)
+      (*     let key_nibbles = string_to_nibbles k in *)
+      (*     if key_nibbles = nibbles then *)
+      (*       Some (Leaf (k, RLP.encode value)) *)
+      (*     else *)
+      (*       let common_prefix_len = common_prefix_length key_nibbles nibbles in *)
+      (*       let common_prefix = list_sub nibbles 0 common_prefix_len in *)
+      (*       let remaining_key = list_sub key_nibbles common_prefix_len (List.length key_nibbles - common_prefix_len) in *)
+      (*       let remaining_nibbles = list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len) in *)
+      (*        *)
+      (*       if remaining_key = [] then *)
+      (*         Some (Branch (Array.make 16 None, Some (RLP.encode value))) *)
+      (*       else if remaining_nibbles = [] then *)
+      (*         Some (Branch (Array.make 16 None, Some (RLP.encode (RLP.decode v)))) *)
+      (*       else *)
+      (*         let branch = create_branch_node remaining_key remaining_nibbles (RLP.decode v) value in *)
+      (*         Some (Extension (nibbles_to_string common_prefix, branch)) *)
+      (* | Some (Extension (prefix, next_node)) -> *)
+      (*     let prefix_nibbles = string_to_nibbles prefix in *)
+      (*     let common_prefix_len = common_prefix_length prefix_nibbles nibbles in *)
+      (*     if common_prefix_len = List.length prefix_nibbles then *)
+      (*       match insert_aux  *)
+      (*         (Some next_node) (list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len))  *)
+      (*       value with *)
+      (*       | Some new_node -> Some (Extension (prefix, new_node)) *)
+      (*       | None -> failwith "Unexpected None while inserting in Extension node" *)
+      (*     else *)
+      (*       let new_branch = create_branch_node *)
+      (*         (list_sub prefix_nibbles common_prefix_len (List.length prefix_nibbles - common_prefix_len)) *)
+      (*         (list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len)) *)
+      (*         (RLP.decode (RLP.encode value)) *)
+      (*         value *)
+      (*       in *)
+      (*       Some (Extension (nibbles_to_string (list_sub prefix_nibbles 0 common_prefix_len), new_branch)) *)
+      (* | Some (Branch (children, existing_value)) ->  *)
+      (*     match nibbles with *)
+      (*     | [] ->  *)
+      (*         Some (Branch (children, Some (RLP.encode value))) *)
+      (*     | hd :: tl -> *)
+      (*         if hd >= 0 && hd < Array.length children then *)
+      (*           children.(hd) <- insert_aux children.(hd) tl value; *)
+      (*         Some (Branch (children, existing_value)) *)
     in
     insert_aux t (string_to_nibbles key) value
 
+  let rec lookup trie key =
+    let nibbles = string_to_nibbles key in
+    lookup_with_nibbles trie nibbles
+
+  and lookup_with_nibbles (t: trie) (nibbles: int list): node option =
+    match t with
+    | None -> None
+    | Some (Leaf (stored_key, value)) ->
+        let stored_nibbles = string_to_nibbles stored_key in
+        if compare_nibbles stored_nibbles nibbles then
+          Some (Leaf (stored_key, value))
+      else
+        None
+    | Some (Extension (shared_prefix, next_node)) ->
+      let prefix_nibbles = string_to_nibbles shared_prefix in
+      let prefix_len = List.length prefix_nibbles in
+      if compare_nibbles prefix_nibbles (take prefix_len nibbles) then
+        lookup_with_nibbles (Some next_node) (drop prefix_len nibbles)
+      else
+        None
+    | Some (Branch (children, value_opt)) ->
+        match nibbles with
+        | [] -> (match value_opt with
+             | Some value -> Some (Leaf ("", value))
+             | None -> None)
+        | next_nibble :: remaining_nibbles ->
+            let next_child = children.(next_nibble) in
+            lookup_with_nibbles next_child remaining_nibbles
 end

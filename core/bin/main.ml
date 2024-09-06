@@ -39,12 +39,39 @@ let () =
   List.iter (fun i -> print_endline i) known_peers_env;
   print_endline"";
 
+  let open Agora_core.State.MKPTrie in
+  let trie = 
+    None 
+    |> fun t -> insert t "test" (`String "test")
+    |> fun t -> insert t "tes" (`String "tes")
+    |> fun t -> insert t "testt" (`String "testt")
+    (* |> fun t -> insert t "john" (`String "john") *)
+  in
+  print_endline"";
+  print_endline (string_of_node trie 0);
+  print_endline"";
+
+  let print_key_nibbles key =
+    let nibbles = string_to_nibbles key in
+    let nibble_str = String.concat " " (List.map string_of_int nibbles) in
+    Printf.printf "Key: %s, Nibbles: [%s]\n" key nibble_str;
+  in
+  print_key_nibbles "test";
+  print_key_nibbles "tes";
+  print_key_nibbles "testt";
+
+  (* let _ = match lookup trie "tom" with *)
+  (*   | None -> print_endline "\nNode not found\n" *)
+  (*   | Some node -> Printf.printf "\nNode found: %s\n" (string_of_node (Some(node)) 0) *)
+  (* in *)
+
   let genesis: Block.block = {
     index = 0;
     previous_hash = "";
     timestamp = Unix.time ();
     transactions = [];
     miner = "0";
+    state_root = "0";
     nonce = 0;
     difficulty = 4;
     hash = "";

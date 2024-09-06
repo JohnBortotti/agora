@@ -1,5 +1,4 @@
 open Digestif.SHA256
-(* open Cryptokit *)
 open Secp256k1
 open Bigarray
 
@@ -99,7 +98,6 @@ module Transaction = struct
             Printf.printf "Invalid recoverable signature\n";
             raise exn
         in
-
         let recovered_pk =
           try
             let pub_key = Sign.recover_exn ctx ~signature:recoverable_sign ~msg:tx_msg in
@@ -111,7 +109,6 @@ module Transaction = struct
             Printf.printf "Public key recovery failed\n";
             raise exn
         in
-
         let sender_pk = 
           try 
             let decoded_sender = hex_to_bytes tx.sender in
@@ -130,7 +127,6 @@ module Transaction = struct
                 (Printexc.to_string exn);
               raise exn
         in
-
         if not (Key.equal recovered_pk sender_pk) then
            begin
               Printf.printf "Public key mismatch: transaction sender and recovered key differ\n";
@@ -185,6 +181,7 @@ module Block = struct
     timestamp: float;
     transactions: Transaction.transaction list;
     miner: string;
+    state_root: string;
     nonce: int;
     difficulty: int;
     hash: string;
