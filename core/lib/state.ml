@@ -283,5 +283,4 @@ module Account = struct
     | `List [`String address; `String balance; `String nonce; `String storage_root; `String code_hash] ->
         { address; balance = int_of_string balance; nonce = int_of_string nonce; storage_root; code_hash }
     | _ -> failwith "Invalid RLP encoding for account"
-
 end

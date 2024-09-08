@@ -15,7 +15,7 @@ node implementation:
       - [x] validate block
       - [x] broadcast proposed block (if valid)
   - [ ] state 
-    - [ ] account global state (funds, nonce, storageRoot, codeHash)
+    - [ ] account global state (balance, nonce, storageRoot, codeHash)
     - [ ] contract storage
   - fixes
     - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
