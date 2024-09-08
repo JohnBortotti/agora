@@ -260,3 +260,28 @@ module MKPTrie = struct
       else
         None
 end
+
+module Account = struct
+  type t = {
+    address: string;
+    balance: int;
+    nonce: int;
+    storage_root: string;
+    code_hash: string;
+  }
+
+  let encode account =
+   `List [
+      `String account.address;
+      `String (string_of_int account.balance);
+      `String (string_of_int account.nonce);
+      `String account.storage_root;
+      `String account.code_hash;
+    ]
+
+  let decode = function
+    | `List [`String address; `String balance; `String nonce; `String storage_root; `String code_hash] ->
+        { address; balance = int_of_string balance; nonce = int_of_string nonce; storage_root; code_hash }
+    | _ -> failwith "Invalid RLP encoding for account"
+
+end

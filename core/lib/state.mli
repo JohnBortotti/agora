@@ -25,3 +25,16 @@ module MKPTrie : sig
   val insert: trie -> string -> RLP.t -> trie
   val lookup: trie -> string -> node option
 end
+
+module Account : sig
+  type t = {
+    address: string;
+    balance: int;
+    nonce: int;
+    storage_root: string;
+    code_hash: string;
+  }
+
+  val encode: t -> RLP.t
+  val decode: RLP.t -> t
+end

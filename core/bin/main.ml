@@ -13,6 +13,7 @@ TODO:
 
 open Agora_core.Node
 open Agora_core.Transaction
+open Agora_core.State
 
 let get_env_var var_name =
   try
@@ -36,36 +37,37 @@ let () =
 
   print_endline "running node...\n";
 
-  List.iter (fun i -> print_endline i) known_peers_env;
-  print_endline"";
+  let account_1: Account.t = {
+    address = "0x000";
+    balance = 2;
+    nonce = 0;
+    storage_root = "";
+    code_hash = "";
+  } in 
+  
+  let account_2: Account.t = {
+    address = "0x002";
+    balance = 50;
+    nonce = 1;
+    storage_root = "";
+    code_hash = "";
+  } in  
 
-  let open Agora_core.State.MKPTrie in
-  let trie = 
-    None 
-    |> fun t -> insert t "test" (`List[`String "test"])
-    |> fun t -> insert t "tes" (`List[`String "tes"])
-    |> fun t -> insert t "testt" (`List[`String "testt"])
-    |> fun t -> insert t "john" (`List[`String "john"])
-  in
-  print_endline"";
-  print_endline (string_of_node trie 0);
-  print_endline"";
+  let account_2_2: Account.t = {
+    address = "0x002";
+    balance = 60;
+    nonce = 1;
+    storage_root = "";
+    code_hash = "";
+  } in
 
-  let print_key_nibbles key =
-    let nibbles = string_to_nibbles key in
-    let nibble_str = String.concat " " (List.map string_of_int nibbles) in
-    Printf.printf "Key: %s, Nibbles: [%s]\n" key nibble_str;
+  let global_state: MKPTrie.trie = None 
+   |> fun f -> MKPTrie.insert f account_1.address (Account.encode account_1)
+   |> fun f -> MKPTrie.insert f account_2.address (Account.encode account_2)
+   |> fun f -> MKPTrie.insert f account_2.address (Account.encode account_2_2)
   in
-  print_key_nibbles "test";
-  print_key_nibbles "tes";
-  print_key_nibbles "testt";
-  print_key_nibbles "john";
-  print_endline"\n";
-
-  let _ = match lookup trie "tes" with
-    | None -> print_endline "\nNode not found\n"
-    | Some node -> Printf.printf "\nNode found: %s\n" (string_of_node (Some(node)) 0)
-  in
+  
+  print_endline (MKPTrie.string_of_node global_state 0);
 
   let genesis: Block.block = {
     index = 0;
