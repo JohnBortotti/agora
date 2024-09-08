@@ -42,10 +42,10 @@ let () =
   let open Agora_core.State.MKPTrie in
   let trie = 
     None 
-    |> fun t -> insert t "test" (`String "test")
-    |> fun t -> insert t "tes" (`String "tes")
-    |> fun t -> insert t "testt" (`String "testt")
-    |> fun t -> insert t "john" (`String "john")
+    |> fun t -> insert t "test" (`List[`String "test"])
+    |> fun t -> insert t "tes" (`List[`String "tes"])
+    |> fun t -> insert t "testt" (`List[`String "testt"])
+    |> fun t -> insert t "john" (`List[`String "john"])
   in
   print_endline"";
   print_endline (string_of_node trie 0);
@@ -60,11 +60,12 @@ let () =
   print_key_nibbles "tes";
   print_key_nibbles "testt";
   print_key_nibbles "john";
+  print_endline"\n";
 
-  (* let _ = match lookup trie "tom" with *)
-  (*   | None -> print_endline "\nNode not found\n" *)
-  (*   | Some node -> Printf.printf "\nNode found: %s\n" (string_of_node (Some(node)) 0) *)
-  (* in *)
+  let _ = match lookup trie "tes" with
+    | None -> print_endline "\nNode not found\n"
+    | Some node -> Printf.printf "\nNode found: %s\n" (string_of_node (Some(node)) 0)
+  in
 
   let genesis: Block.block = {
     index = 0;

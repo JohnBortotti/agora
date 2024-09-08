@@ -10,9 +10,10 @@ end
 
 module MKPTrie : sig
   type node =
-    | Leaf of string * string
-    | Extension of string * node
+    | Leaf of nibbles * string
+    | Extension of nibbles * node
     | Branch of (node option array) * (string option)
+  and nibbles = int list
   
   type trie = node option
 
