@@ -1,3 +1,6 @@
+open Transaction.Transaction
+open Digestif.SHA256
+
 module RLP = struct
   type t = [ `String of string | `List of t list ]
 
@@ -41,6 +44,16 @@ module RLP = struct
     | `String s -> encode_string s
     | `List lst -> encode_list (List.map encode lst)
 
+  let int_of_bytes s =
+    let len = String.length s in
+    let rec aux acc i =
+      if i >= len then acc
+      else
+        let byte = Char.code s.[i] in
+        aux (acc lsl 8 + byte) (i + 1)
+    in
+    aux 0 0
+
   let decode s =
     let decode_string pos len =
       String.sub s pos len
@@ -54,23 +67,34 @@ module RLP = struct
       in
       aux [] pos (pos + len)
     and decode_at pos =
-      let byte = Char.code s.[pos] in
-      if byte < 0x80 then
-        (`String (String.make 1 s.[pos]), pos + 1)
-      else if byte <= 0xB7 then
-        let len = byte - 0x80 in
-        (`String (decode_string (pos + 1) len), pos + 1 + len)
-      else if byte <= 0xBF then
-        let len_len = byte - 0xB7 in
-        let len = int_of_string (String.sub s (pos + 1) len_len) in
-        (`String (decode_string (pos + 1 + len_len) len), pos + 1 + len_len + len)
-      else if byte <= 0xF7 then
-        let len = byte - 0xC0 in
-        (`List (decode_list (pos + 1) len), pos + 1 + len)
-      else
-        let len_len = byte - 0xF7 in
-        let len = int_of_string (String.sub s (pos + 1) len_len) in
-        (`List (decode_list (pos + 1 + len_len) len), pos + 1 + len_len + len)
+      try
+        let byte = Char.code s.[pos] in
+        if byte < 0x80 then
+          (`String (String.make 1 s.[pos]), pos + 1)
+        else if byte <= 0xB7 then
+          let len = byte - 0x80 in
+          (`String (decode_string (pos + 1) len), pos + 1 + len)
+        else if byte <= 0xBF then
+          let len_len = byte - 0xB7 in
+          let len = int_of_bytes (String.sub s (pos + 1) len_len) in
+          (`String (decode_string (pos + 1 + len_len) len), pos + 1 + len_len + len)
+        else if byte <= 0xF7 then
+          let len = byte - 0xC0 in
+          (`List (decode_list (pos + 1) len), pos + 1 + len)
+        else
+          let len_len = byte - 0xF7 in
+          let len = int_of_bytes (String.sub s (pos + 1) len_len) in
+          (`List (decode_list (pos + 1 + len_len) len), pos + 1 + len_len + len)
+      with
+      | Invalid_argument msg ->
+          Printf.printf "Error: Invalid argument at position %d: %s\n" pos msg;
+          raise (Failure "RLP decoding failed due to invalid argument")
+      | Failure msg ->
+          Printf.printf "Error: Failure at position %d: %s\n" pos msg;
+          raise (Failure "RLP decoding failed")
+      | _ ->
+          Printf.printf "Error: Unknown exception at position %d\n" pos;
+          raise (Failure "RLP decoding failed due to unknown exception")
     in
     fst (decode_at 0)
 end
@@ -253,12 +277,31 @@ module MKPTrie = struct
           else
             None)
     | Some (Leaf (stored_key, value)) ->
-      print_endline value;
       let stored_nibbles = stored_key in
       if compare_nibbles stored_nibbles nibbles then
         Some (Leaf (stored_key, value))
       else
         None
+
+  let rec hash = function
+    | Some (Leaf (key, value)) ->
+        let rlp_encoded = RLP.encode (`List[`String (nibbles_to_string key); `String value]) in
+        to_hex (digest_string rlp_encoded)
+    | Some (Extension (extension, child)) ->
+        let child_hash = hash (Some child) in
+        let rlp_encoded = RLP.encode (`List[`String (nibbles_to_string extension); `String child_hash]) in
+        to_hex (digest_string rlp_encoded)
+    | Some (Branch (children, value_opt)) ->
+        let child_hashes = Array.map (function 
+          | Some child -> hash (Some child)
+          | None -> ""
+        ) children in
+        let rlp_encoded = RLP.encode (`List[
+          `List (Array.to_list (Array.map (fun h -> `String h) child_hashes));
+          (match value_opt with Some v -> `String v | None -> `String "")
+        ]) in
+        to_hex (digest_string rlp_encoded)
+    | None -> ""
 end
 
 module Account = struct
@@ -269,6 +312,14 @@ module Account = struct
     storage_root: string;
     code_hash: string;
   }
+
+  let string_of_account account =
+    Printf.sprintf "Address: %s\nBalance: %d\nNonce: %d\nStorage Root: %s\nCode Hash: %s\n"
+      account.address
+      account.balance
+      account.nonce
+      account.storage_root
+      account.code_hash
 
   let encode account =
    `List [
@@ -283,4 +334,50 @@ module Account = struct
     | `List [`String address; `String balance; `String nonce; `String storage_root; `String code_hash] ->
         { address; balance = int_of_string balance; nonce = int_of_string nonce; storage_root; code_hash }
     | _ -> failwith "Invalid RLP encoding for account"
+
+  let apply_transaction state tx =
+    let get_account state address =
+      match MKPTrie.lookup state address with
+        | Some (MKPTrie.Leaf (_, account_data)) -> Some (decode (RLP.decode account_data))
+        | Some (MKPTrie.Branch (_, some_data)) ->
+            (match some_data with
+            | Some account_data -> Some (decode (RLP.decode account_data))
+            | _ -> None)
+        | _ -> None
+    in
+    match get_account state tx.sender with
+    | None -> Error "Sender account not found"
+    | Some sender_account -> 
+      if sender_account.balance < tx.amount then
+        Error "Insufficient balance"
+      else if sender_account.nonce <> tx.nonce then
+        Error "Invalid nonce"
+      else
+        match get_account state tx.receiver with
+      | None ->
+        let new_receiver_account = {
+          address = tx.receiver;
+          balance = tx.amount;
+          nonce = 0;
+          storage_root = "";
+          code_hash = "";
+        } in
+        let updated_sender_account = { sender_account with
+          balance = sender_account.balance - tx.amount;
+          nonce = sender_account.nonce + 1;
+        } in
+        let new_state = 
+          MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) 
+          |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
+        Ok (new_state)
+      | Some receiver_account ->
+        let updated_receiver_account = { receiver_account with balance = receiver_account.balance + tx.amount } in
+        let updated_sender_account = { sender_account with
+          balance = sender_account.balance - tx.amount;
+          nonce = sender_account.nonce + 1;
+        } in
+        let new_state = 
+          MKPTrie.insert state receiver_account.address (encode updated_receiver_account) 
+          |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
+        Ok (new_state)
 end

@@ -208,6 +208,7 @@ module Block = struct
       ("transactions", `List (List.map Transaction.transaction_to_json block.transactions));
       ("nonce", `Int block.nonce);
       ("miner", `String block.miner);
+      ("state_root", `String block.state_root);
       ("hash", `String block.hash);
       ("difficulty", `Int block.difficulty)
     ]

@@ -14,7 +14,6 @@ TODO:
 
 open Agora_core.Node
 open Agora_core.Transaction
-open Agora_core.State
 
 let get_env_var var_name =
   try
@@ -38,37 +37,47 @@ let () =
 
   print_endline "running node...\n";
 
-  let account_1: Account.t = {
-    address = "0x000";
-    balance = 2;
-    nonce = 0;
-    storage_root = "";
-    code_hash = "";
-  } in 
-  
-  let account_2: Account.t = {
-    address = "0x002";
-    balance = 50;
-    nonce = 1;
-    storage_root = "";
-    code_hash = "";
-  } in  
+  (* let account_1: Account.t = { *)
+  (*   address = "0x000"; *)
+  (*   balance = 2; *)
+  (*   nonce = 0; *)
+  (*   storage_root = ""; *)
+  (*   code_hash = ""; *)
+  (* } in  *)
+  (* let account_2: Account.t = { *)
+  (*   address = "0x002"; *)
+  (*   balance = 50; *)
+  (*   nonce = 1; *)
+  (*   storage_root = ""; *)
+  (*   code_hash = ""; *)
+  (* } in   *)
+  (* let account_2_2: Account.t = { *)
+  (*   address = "0x002"; *)
+  (*   balance = 60; *)
+  (*   nonce = 1; *)
+  (*   storage_root = ""; *)
+  (*   code_hash = ""; *)
+  (* } in *)
+  (*  let account: Account.t = { *)
+  (*   address = "04b94481d042230876d2b3682e3b8baff40b0f4a0e7e5b1ca91c119c67d1c2dc5d80858eccb830a16944e51c1bcc93a8485276ebc0dd09eeb0c09f2286526c0b7d"; *)
+  (*   balance = 50; *)
+  (*   nonce = 1; *)
+  (*   storage_root = ""; *)
+  (*   code_hash = "" *)
+  (* } in *)
+  (* let global_state: MKPTrie.trie = None  *)
+  (* |> fun f -> MKPTrie.insert f account.address (Account.encode account); *)
+  (*  |> fun f -> MKPTrie.insert f account_1.address (Account.encode account_1) *)
+  (*  |> fun f -> MKPTrie.insert f account_2.address (Account.encode account_2) *)
+  (*  |> fun f -> MKPTrie.insert f account_2.address (Account.encode account_2_2) *)
+  (* in *)
+  (* print_endline (MKPTrie.string_of_node global_state 0); *)
+  (* print_endline""; *)
+  (* print_endline (MKPTrie.hash global_state); *)
 
-  let account_2_2: Account.t = {
-    address = "0x002";
-    balance = 60;
-    nonce = 1;
-    storage_root = "";
-    code_hash = "";
-  } in
-
-  let global_state: MKPTrie.trie = None 
-   |> fun f -> MKPTrie.insert f account_1.address (Account.encode account_1)
-   |> fun f -> MKPTrie.insert f account_2.address (Account.encode account_2)
-   |> fun f -> MKPTrie.insert f account_2.address (Account.encode account_2_2)
-  in
-  
-  print_endline (MKPTrie.string_of_node global_state 0);
+  (* (match MKPTrie.lookup global_state account.address with *)
+  (* | Some res -> print_endline (MKPTrie.string_of_node (Some res) 0) *)
+  (* | None -> print_endline "Not found"); *)
 
   let genesis: Block.block = {
     index = 0;

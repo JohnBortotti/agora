@@ -168,6 +168,32 @@ let handle_block_proposal_request node body =
 
 let mine_block transactions prev_block difficulty miner_addr =
   let open Block in
+  let open Account in
+
+  let rec apply_transactions state transactions = 
+    (match transactions with
+    | [] -> state
+    | tx :: rest ->
+        (match Account.apply_transaction state tx with
+        | Ok new_state -> Printf.printf "Transaction executed ok!\n"; apply_transactions new_state rest
+        | Error err -> Printf.printf "Transaction execution error: %s\n" err;
+            apply_transactions state rest))
+  in
+  let account = {
+    address = "04b94481d042230876d2b3682e3b8baff40b0f4a0e7e5b1ca91c119c67d1c2dc5d80858eccb830a16944e51c1bcc93a8485276ebc0dd09eeb0c09f2286526c0b7d";
+    balance = 400;
+    nonce = 1;
+    storage_root = "";
+    code_hash = ""
+  } in
+
+  let test_state = MKPTrie.insert None account.address (encode account) in
+  let updated_state = apply_transactions test_state transactions in
+  let state_root = MKPTrie.hash updated_state in
+
+  print_endline (MKPTrie.string_of_node updated_state 0);
+  print_endline (state_root);
+
   let rec mine nonce =
     let candidate_block = {
       index = prev_block.index + 1;
@@ -207,8 +233,8 @@ let mining_routine node =
     let* curr_pool = Lwt_mvar.take node.transaction_pool in
     let validated_transactions, remaining_transactions = 
         List.partition (fun (_, verified) -> verified) curr_pool in
+
     if List.length validated_transactions >= threshold then (
-      (* print_endline "\nstarted mining block\n"; *)
 
       let transactions_to_mine = List.map fst validated_transactions in
       let* curr_blockchain = Lwt_mvar.take node.blockchain in

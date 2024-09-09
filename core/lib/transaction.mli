@@ -1,5 +1,3 @@
-(* open Cryptokit *)
-
 module Transaction : sig
   type address = string
 

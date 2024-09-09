@@ -1,3 +1,5 @@
+open Transaction 
+
 module RLP : sig
   type t = [ `String of string | `List of t list ]
 
@@ -24,6 +26,7 @@ module MKPTrie : sig
   val list_sub: string list -> int -> int -> string list
   val insert: trie -> string -> RLP.t -> trie
   val lookup: trie -> string -> node option
+  val hash: trie -> string
 end
 
 module Account : sig
@@ -35,6 +38,8 @@ module Account : sig
     code_hash: string;
   }
 
+  val string_of_account: t -> string
   val encode: t -> RLP.t
   val decode: RLP.t -> t
+  val apply_transaction: MKPTrie.trie -> Transaction.transaction -> (MKPTrie.trie, string) result
 end
