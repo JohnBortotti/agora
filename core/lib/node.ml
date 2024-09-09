@@ -15,7 +15,9 @@ node implementation:
       - [x] validate block
       - [x] broadcast proposed block (if valid)
   - [ ] state 
-    - [ ] account global state (balance, nonce, storageRoot, codeHash)
+    - [x] account global state (balance, nonce, storageRoot, codeHash)
+    - [ ] add miner fee after block inclusion
+    - [ ] reverse transactions with network choose other block
     - [ ] contract storage
   - fixes
     - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
@@ -39,7 +41,7 @@ type node = {
   blockchain: Block.block list Lwt_mvar.t;
   mining: bool Lwt_mvar.t;
   miner_addr: string;
-  global_state: MKPTrie.trie;
+  global_state: MKPTrie.trie Lwt_mvar.t;
   known_peers: string list Lwt_mvar.t;
   blocks_to_broadcast: Block.block list Lwt_mvar.t;
 }
@@ -55,7 +57,7 @@ let rec validate_transaction_pool node =
   let new_pool = List.filter_map (fun (tx, verified) -> 
     if not verified then 
       if Transaction.validate_transaction tx then (
-        print_endline "verifying tx";
+        print_endline "tx valid";
         Some (tx, true)
       )
       else (
@@ -137,7 +139,6 @@ let rec broadcast_block_routine node =
   print_endline "looking for blocks to broadcast\n";
 
   if List.length blocks > 0 then (
-
     print_endline "broadcasting blocks routine\n";
 
     let* peers = Lwt_mvar.take node.known_peers in
@@ -166,33 +167,24 @@ let handle_block_proposal_request node body =
     let* _ = Lwt_mvar.put node.blockchain curr_chain in
     Lwt.return_false 
 
-let mine_block transactions prev_block difficulty miner_addr =
+let mine_block curr_state transactions prev_block difficulty miner_addr =
   let open Block in
-  let open Account in
 
   let rec apply_transactions state transactions = 
     (match transactions with
     | [] -> state
     | tx :: rest ->
         (match Account.apply_transaction state tx with
-        | Ok new_state -> Printf.printf "Transaction executed ok!\n"; apply_transactions new_state rest
-        | Error err -> Printf.printf "Transaction execution error: %s\n" err;
+        | Ok new_state -> 
+            Printf.printf "Transaction executed ok!\n"; 
+            apply_transactions new_state rest
+        | Error err -> 
+            Printf.printf "Transaction execution error: %s\n" err;
             apply_transactions state rest))
   in
-  let account = {
-    address = "04b94481d042230876d2b3682e3b8baff40b0f4a0e7e5b1ca91c119c67d1c2dc5d80858eccb830a16944e51c1bcc93a8485276ebc0dd09eeb0c09f2286526c0b7d";
-    balance = 400;
-    nonce = 1;
-    storage_root = "";
-    code_hash = ""
-  } in
 
-  let test_state = MKPTrie.insert None account.address (encode account) in
-  let updated_state = apply_transactions test_state transactions in
+  let updated_state = apply_transactions curr_state transactions in
   let state_root = MKPTrie.hash updated_state in
-
-  print_endline (MKPTrie.string_of_node updated_state 0);
-  print_endline (state_root);
 
   let rec mine nonce =
     let candidate_block = {
@@ -201,20 +193,20 @@ let mine_block transactions prev_block difficulty miner_addr =
       timestamp = Unix.time ();
       transactions = transactions;
       miner = miner_addr;
-      state_root = "";
+      state_root = state_root;
       nonce = nonce;
       difficulty = difficulty;
       hash = ""
     } in
     let candidate_hash = hash_block { candidate_block with hash = "" } in 
     if is_valid_pow candidate_hash difficulty then (
-      { candidate_block with hash = candidate_hash }
+      (updated_state, { candidate_block with hash = candidate_hash })
     ) else
       mine (nonce + 1)
     in mine 0
 
 let mining_routine node = 
-  let threshold = 2 in
+  let threshold = 0 in
   let time_delay = 10.0 in
   let rec aux () = 
     let* mining = Lwt_mvar.take node.mining in
@@ -237,16 +229,24 @@ let mining_routine node =
     if List.length validated_transactions >= threshold then (
 
       let transactions_to_mine = List.map fst validated_transactions in
+
       let* curr_blockchain = Lwt_mvar.take node.blockchain in
       let* _ = Lwt_mvar.put node.transaction_pool remaining_transactions in
+
+      let* curr_global_state = Lwt_mvar.take node.global_state in
+      let* _ = Lwt_mvar.put node.global_state curr_global_state in
 
       let prev_block = List.hd curr_blockchain in
       let difficulty = Block.calculate_difficulty prev_block in
       let miner_addr = node.miner_addr in
-      let mined_block = mine_block transactions_to_mine prev_block difficulty miner_addr in
+
+      let (new_state, mined_block) = mine_block curr_global_state transactions_to_mine prev_block difficulty miner_addr in
 
       let new_chain = mined_block :: curr_blockchain in
       let* _ = Lwt_mvar.put node.blockchain new_chain in
+
+      let* _ = Lwt_mvar.take node.global_state in
+      let* _ = Lwt_mvar.put node.global_state new_state in
       
       let* peers_list = Lwt_mvar.take node.known_peers in
       let* _ = Lwt_mvar.put node.known_peers peers_list in

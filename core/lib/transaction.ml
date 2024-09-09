@@ -190,12 +190,13 @@ module Block = struct
   let string_of_block block =
     let txs = List.map Transaction.transaction_to_json_string block.transactions |> String.concat ",\n " in
     Printf.sprintf "Block {\n  index: %d;\n  previous_hash: %s;\n  timestamp: %f;
-    transactions: [\n  %s\n  ];\n miner: %s;\n nonce: %d;\n difficulty: %d;\n hash: %s\n}"
+    transactions: [\n  %s\n  ];\n miner: %s;\n state_root: %s;\n nonce: %d;\n difficulty: %d;\n hash: %s\n}"
     block.index
     block.previous_hash
     block.timestamp
     txs
     block.miner
+    block.state_root
     block.nonce
     block.difficulty
     block.hash
@@ -221,12 +222,13 @@ module Block = struct
       Transaction.string_of_transaction_compact tx
     ) block.transactions) in
     let data = 
-      Printf.sprintf "%d%s%f%s%s%d%d"
+      Printf.sprintf "%d%s%f%s%s%s%d%d"
         block.index
         block.previous_hash
         block.timestamp
         transactions_str
         block.miner
+        block.state_root
         block.nonce
         block.difficulty
     in
