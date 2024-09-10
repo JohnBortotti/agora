@@ -43,6 +43,12 @@ const TransactionList: React.FC = () => {
       .catch(error => console.error('Error fetching transactions:', error));
 	}
 
+	const truncateString = (str='', maxLength=10): String => {
+	  return str.length > maxLength 
+    ? `${str.substring(0, maxLength)}…`
+    : str
+	}
+
 	const handleNodeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
 		setSelectedNode(event.target.value);
 		getTransactions(event.target.value);
@@ -120,9 +126,9 @@ const TransactionList: React.FC = () => {
                   cursor="pointer"
                   _hover={{ bg: "gray.100" }}
                 >
-                  <Td>{tx.hash}</Td>
-                  <Td>{tx.sender}</Td>
-                  <Td>{tx.receiver}</Td>
+                  <Td>{truncateString(tx.hash)}</Td>
+                  <Td>{truncateString(tx.sender)}</Td>
+                  <Td>{truncateString(tx.receiver)}</Td>
                   <Td color="green.500" fontWeight="bold">{tx.amount}</Td>
                   <Td>{tx.gas_limit}</Td>
                   <Td>{tx.gas_price}</Td>
