@@ -374,11 +374,34 @@ let http_server node =
         let json_body = `List tx_json_list |> Yojson.Basic.to_string in
         Lwt_mvar.put node.transaction_pool pool >>= fun () ->
         Server.respond_string ~status:`OK ~body:json_body ()
-    | (`GET, "/chain") ->
+    | (`GET, "/blocks") ->
+        let uri = req |> Request.uri in
+        let query = Uri.query uri in
+
+        let max_blocks_per_request = 10 in
+        let start_param = List.assoc_opt "start" query in
+        let end_param = List.assoc_opt "end" query in
+
+        let start_idx = match start_param with
+          | Some [start_str] -> int_of_string_opt start_str |> Option.value ~default:0
+          | _ -> 0
+        in
+        let end_idx = match end_param with
+          | Some [end_str] -> int_of_string_opt end_str |> Option.value ~default:max_blocks_per_request
+          | _ -> max_blocks_per_request
+        in
+
         let* chain = Lwt_mvar.take node.blockchain in
         let* _ = Lwt_mvar.put node.blockchain chain in
-        let chain_json_list = List.map (fun bl -> Block.block_to_json bl) chain in
+
+        let start_idx = max 0 start_idx in
+        let end_idx = min (List.length chain) end_idx in
+
+        let blocks_in_range = List.filteri (fun i _ -> i >= start_idx && i < end_idx) chain in
+
+        let chain_json_list = List.map (fun bl -> Block.block_to_json bl) blocks_in_range in
         let json_body = `List chain_json_list |> Yojson.Basic.to_string in
+
         Server.respond_string ~headers:cors_headers ~status:`OK ~body:json_body ()
     | _ ->
         Server.respond_string ~status:`Not_found ~body:"Not found" ()

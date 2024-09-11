@@ -15,7 +15,7 @@ const TransactionList: React.FC = () => {
 	};
 
 	const getTransactions = (node: string) => {
-    axios.get(`${node}/chain`) 
+    axios.get(`${node}/blocks`) 
       .then(response => {
 
 				const blocks = response.data;
