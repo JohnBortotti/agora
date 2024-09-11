@@ -168,17 +168,16 @@ let handle_block_proposal_request node body =
   (* TODO: validate if the chain received is longer*)
   (* TODO: test sending a malicious block *)
 
-  (* if received_block.index > prev_block.index+1 then *)
-  (*     begin *)
-  (*     (* get longer chain and discover wich block is safe (last block agreed on network and local) *) *)
-  (*     (* validate received chain *) *)
-  (*     (* apply received chain *) *)
-  (*     (* remove trasactions from mempool *) *)
-  (*     print_endline "\n\n\nA OUTRA CHAIN É MAIOR\n\n\n"; *)
-  (*     Lwt.return_false *)
-  (*   end *)
-  (* else if Block.validate_block received_block prev_block then ( *)
-  if Block.validate_block received_block prev_block then (
+  if received_block.index > prev_block.index+1 then
+      begin
+      (* get longer chain and discover wich block is safe (last block agreed on network and local) *)
+      (* validate received chain *)
+      (* apply received chain *)
+      (* remove trasactions from mempool *)
+      print_endline "\n\n\nA OUTRA CHAIN É MAIOR\n\n\n";
+      Lwt.return_false
+    end
+  else if Block.validate_block received_block prev_block then (
     try
       (* List.iter (fun tx ->  *)
       (*   if not (Transaction.validate_transaction tx) then  *)
@@ -205,7 +204,7 @@ let handle_block_proposal_request node body =
   else 
     Lwt.return_false 
 
-let mine_block curr_state transactions prev_block difficulty miner_addr =
+let mine_block curr_state transactions (prev_block: Block.block) difficulty miner_addr: (MKPTrie.trie * Block.block) t  =
   let open Block in
 
   (* TODO: validate broadcasting response *)
@@ -398,6 +397,34 @@ let http_server node =
 
         let chain_json_list = List.map (fun bl -> Block.block_to_json bl) blocks_in_range in
         let json_body = `List chain_json_list |> Yojson.Basic.to_string in
+
+        Server.respond_string ~headers:cors_headers ~status:`OK ~body:json_body ()
+    | (`GET, "/headers") ->
+        let uri = req |> Request.uri in
+        let query = Uri.query uri in
+
+        let max_headers_per_request = 10 in
+        let start_param = List.assoc_opt "start" query in
+        let end_param = List.assoc_opt "end" query in
+
+        let start_idx = match start_param with
+          | Some [start_str] -> int_of_string_opt start_str |> Option.value ~default:0
+          | _ -> 0
+        in
+        let end_idx = match end_param with
+          | Some [end_str] -> int_of_string_opt end_str |> Option.value ~default:max_headers_per_request
+          | _ -> max_headers_per_request
+        in
+
+        let* chain = Lwt_mvar.take node.blockchain in
+        let* _ = Lwt_mvar.put node.blockchain chain in
+
+        let start_idx = max 0 start_idx in
+        let end_idx = min (List.length chain) end_idx in
+
+        let headers_in_range = List.filteri (fun i _ -> i >= start_idx && i < end_idx) chain in
+        let headers_json_list = List.map (fun block -> Block.block_to_header block |> Block.block_header_to_json) headers_in_range in
+        let json_body = `List headers_json_list |> Yojson.Basic.to_string in
 
         Server.respond_string ~headers:cors_headers ~status:`OK ~body:json_body ()
     | _ ->

@@ -185,6 +185,24 @@ module Block = struct
     nonce: int;
     difficulty: int;
     hash: string;
+  } 
+
+  type block_header = {
+    index: int;
+    previous_hash: string;
+    timestamp: float;
+    nonce: int;
+    hash: string;
+    difficulty: int;
+  }
+
+  let block_to_header (block: block): block_header = {
+    index = block.index;
+    previous_hash = block.previous_hash;
+    timestamp = block.timestamp;
+    nonce = block.nonce;
+    hash = block.hash;
+    difficulty = block.difficulty;
   }
 
   let string_of_block block =
@@ -201,7 +219,7 @@ module Block = struct
     block.difficulty
     block.hash
 
-  let block_to_json block =
+  let block_to_json (block: block) =
     `Assoc [
       ("index", `Int block.index);
       ("previous_hash", `String block.previous_hash);
@@ -212,6 +230,16 @@ module Block = struct
       ("state_root", `String block.state_root);
       ("hash", `String block.hash);
       ("difficulty", `Int block.difficulty)
+    ]
+
+  let block_header_to_json (header: block_header) =
+    `Assoc [
+      ("index", `Int header.index);
+      ("previous_hash", `String header.previous_hash);
+      ("timestamp", `Float header.timestamp);
+      ("nonce", `Int header.nonce);
+      ("hash", `String header.hash);
+      ("difficulty", `Int header.difficulty)
     ]
 
   let block_to_json_string block =
@@ -237,7 +265,7 @@ module Block = struct
   let is_valid_pow hash difficulty =
     String.sub hash 0 difficulty = String.make difficulty '0'
 
-  let calculate_difficulty prev_block =
+  let calculate_difficulty (prev_block: block) =
     let target_block_time = 20.0 in
     let current_time = Unix.time () -. prev_block.timestamp in
     let adjustment_factor = 

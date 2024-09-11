@@ -14,6 +14,6 @@ type node = {
 
 val add_transaction: (Transaction.transaction * bool) list Lwt_mvar.t -> Transaction.transaction -> unit Lwt.t
 val validate_transaction_pool: node -> unit Lwt.t
-(* val mine_block: MKPTrie.trie -> Transaction.transaction list -> Block.block -> int -> string -> (MKPTrie.trie * Block.block) *)
+val mine_block: MKPTrie.trie -> Transaction.transaction list -> Block.block -> int -> string -> (MKPTrie.trie * Block.block) Lwt.t
 val mining_routine: node -> 'a Lwt.t
 val run_node: node -> unit
