@@ -109,40 +109,31 @@ let handle_transaction_request (node: node) (body: string) =
 let broadcast_block peers_list block =
   let block_json = Block.block_to_json block |> Yojson.Basic.to_string in
 
-  print_endline "broadcast_block:\n";
-  List.iter (fun peer -> print_endline peer) peers_list;
-
   let timeout_duration = 5.0 in
 
   let broadcast_to_peer peer =
+    Printf.printf "broadcasting to peer: %s\n" peer;
     let uri = Uri.of_string (peer ^ "/block") in
     let headers = Cohttp.Header.init_with "Content-Type" "application/json" in
 
     let request =
-      let* response, body = Cohttp_lwt_unix.Client.post
+      let _ = Cohttp_lwt_unix.Client.post
         ~headers
         ~body:(Cohttp_lwt.Body.of_string block_json)
-        uri
-      in
-      match Cohttp.Response.status response with
-      | `OK -> print_endline "block broadcast was accepted"; Lwt.return_unit
-      | `Bad_request -> print_endline "block broadcast was rejected"; Lwt.return_unit
-      | _ ->
-        let* body_str = Cohttp_lwt.Body.to_string body in
-        Printf.printf "failed to send block to %s: %s\n" peer body_str;
-        Lwt.return_unit
+        uri in
+      Lwt.return_unit
     in
-
+     
     let timeout =
       let* () = Lwt_unix.sleep timeout_duration in
       Printf.printf "Timeout while broadcasting to %s\n" peer;
       Lwt.return_unit
     in
 
-    let protect_request = Lwt.protected request in
-    Lwt.choose [protect_request; timeout]
+    Lwt.pick [request;timeout]
   in
-  Lwt_list.iter_p broadcast_to_peer peers_list
+  let* _ = Lwt_list.iter_p broadcast_to_peer peers_list in
+  Lwt.return_unit
 
 let rec broadcast_block_routine node =
   let time_delay = 6. in
@@ -157,7 +148,6 @@ let rec broadcast_block_routine node =
 
     let* peers = Lwt_mvar.take node.known_peers in
     let* _ = Lwt_mvar.put node.known_peers peers in
-    print_endline "broadcast to peers:\n";
     let* _ = Lwt_list.iter_p (fun block -> 
       broadcast_block peers block;
     ) blocks in
@@ -174,13 +164,20 @@ let handle_block_proposal_request node body =
 
   let prev_block = List.hd curr_chain in
 
-  (if received_block.index > prev_block.index+1 then
-    print_endline "\n\n\nA OUTRA CHAIN É MAIOR\n\n\n");
-
   (* TODO: validate the first transaction "coinbase" *)
   (* TODO: validate if the chain received is longer*)
   (* TODO: test sending a malicious block *)
 
+  (* if received_block.index > prev_block.index+1 then *)
+  (*     begin *)
+  (*     (* get longer chain and discover wich block is safe (last block agreed on network and local) *) *)
+  (*     (* validate received chain *) *)
+  (*     (* apply received chain *) *)
+  (*     (* remove trasactions from mempool *) *)
+  (*     print_endline "\n\n\nA OUTRA CHAIN É MAIOR\n\n\n"; *)
+  (*     Lwt.return_false *)
+  (*   end *)
+  (* else if Block.validate_block received_block prev_block then ( *)
   if Block.validate_block received_block prev_block then (
     try
       (* List.iter (fun tx ->  *)
@@ -308,8 +305,8 @@ let mining_routine node =
       
       let* peers_list = Lwt_mvar.take node.known_peers in
       let* _ = Lwt_mvar.put node.known_peers peers_list in
-      let* _ = broadcast_block peers_list mined_block in
 
+      let* _ = broadcast_block peers_list mined_block in
       aux ()
     ) else (
       print_endline "mine pass...\n";
