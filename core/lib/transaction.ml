@@ -219,6 +219,16 @@ module Block = struct
     block.difficulty
     block.hash
 
+  let string_of_block_header block_header =
+    Printf.sprintf "Block_header {\n  index: %d;\n  previous_hash: %s;\n  timestamp: %f;
+    \n nonce: %d;\n difficulty: %d;\n hash: %s\n}"
+    block_header.index
+    block_header.previous_hash
+    block_header.timestamp
+    block_header.nonce
+    block_header.difficulty
+    block_header.hash
+
   let block_to_json (block: block) =
     `Assoc [
       ("index", `Int block.index);
@@ -282,7 +292,7 @@ module Block = struct
       (print_endline "invalid block hash\n";
       false)
     else if block.previous_hash <> prev_block.hash then
-      (print_endline "invalid previous_block hash\n";
+      (print_endline "invalid previous_hash hash\n";
       false)
     else if not (is_valid_pow block.hash difficulty) then
       (print_endline "invalid pow\n";

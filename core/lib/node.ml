@@ -101,13 +101,37 @@ let block_of_json json: Block.block =
     difficulty = json |> member "difficulty" |> to_int;
   }
 
+let block_header_of_json json: Block.block_header =
+  let open Yojson.Basic.Util in
+  {
+    index = json |> member "index" |> to_int;
+    previous_hash = json |> member "previous_hash" |> to_string;
+    timestamp = json |> member "timestamp" |> to_float;
+    nonce = json |> member "nonce" |> to_int;
+    difficulty = json |> member "difficulty" |> to_int;
+    hash = json |> member "hash" |> to_string;
+  }
+
+let blocks_of_json json : Block.block list =
+  let open Yojson.Basic.Util in
+  json |> to_list |> List.map block_of_json
+
+let block_headers_of_json json =
+  json |> Yojson.Basic.Util.to_list |> List.map block_header_of_json
+
 let handle_transaction_request (node: node) (body: string) =
   let json = Yojson.Basic.from_string body in
   let tx = transaction_of_json json in
   add_transaction node.transaction_pool tx
 
 let broadcast_block peers_list block =
+  let peer_addr = Sys.getenv "NODE_ADDR" in
+
   let block_json = Block.block_to_json block |> Yojson.Basic.to_string in
+  let payload = `Assoc [
+    ("peer_addr", `String peer_addr);
+    ("block", Yojson.Basic.from_string block_json)
+  ] |> Yojson.Basic.to_string in
 
   let timeout_duration = 5.0 in
 
@@ -119,7 +143,7 @@ let broadcast_block peers_list block =
     let request =
       let _ = Cohttp_lwt_unix.Client.post
         ~headers
-        ~body:(Cohttp_lwt.Body.of_string block_json)
+        ~body:(Cohttp_lwt.Body.of_string payload)
         uri in
       Lwt.return_unit
     in
@@ -156,8 +180,10 @@ let rec broadcast_block_routine node =
     broadcast_block_routine node
   )
 
-let handle_block_proposal_request node body =
-  let received_block = Yojson.Basic.from_string body |> block_of_json in
+let handle_block_proposal_request node peer_addr body =
+  let open Block in
+  
+  let received_block = body |> block_of_json in
 
   let* curr_chain = Lwt_mvar.take node.blockchain in
   let* _ = Lwt_mvar.put node.blockchain curr_chain in
@@ -168,16 +194,102 @@ let handle_block_proposal_request node body =
   (* TODO: validate if the chain received is longer*)
   (* TODO: test sending a malicious block *)
 
+  (* get longer chain and discover wich block is safe (last block agreed on network and local) *)
+  (* validate received chain *)
+  (* apply received chain *)
+  (* remove trasactions from mempool *)
+
   if received_block.index > prev_block.index+1 then
       begin
-      (* get longer chain and discover wich block is safe (last block agreed on network and local) *)
-      (* validate received chain *)
-      (* apply received chain *)
-      (* remove trasactions from mempool *)
-      print_endline "\n\n\nA OUTRA CHAIN É MAIOR\n\n\n";
-      Lwt.return_false
+        Printf.printf "RECEBENDO UMA CHAIN MAIOR\n";
+
+        let block_end = string_of_int (received_block.index) in
+        let block_start = string_of_int (max 0 (prev_block.index - 20)) in
+        let uri = Uri.of_string (peer_addr ^ "/headers?start=" ^ block_start ^ "&end=" ^ block_end) in
+
+        (* Printf.printf "REQUEST URI: %s\n\n"  *)
+        (*  (peer_addr ^ "/headers?start=" ^ block_start ^ "&end=" ^ block_end); *)
+
+        Printf.printf "RECEIVING BLOCK: %s\n\n" (Block.string_of_block received_block);
+
+        let* _, body = Cohttp_lwt_unix.Client.get uri in
+        let* headers_json = Cohttp_lwt.Body.to_string body in
+        let peer_headers = Yojson.Basic.from_string headers_json |> block_headers_of_json in
+
+        (* print_endline"\n\n\n"; *)
+        (* List.iter (fun f -> print_endline (string_of_block_header f)) peer_headers; *)
+        (* print_endline"\n\n\n"; *)
+
+        let rec find_last_common_block (chain: Block.block list) (headers: Block.block_header list) =
+          Printf.printf "searching for last common block\n";
+          (* verify if the common block is before request interval *)
+          match chain, headers with
+            | [], _ | _, [] -> None
+            | block :: chain_rest, header :: headers_rest ->
+              if block.index <> header.index then
+                begin
+                  print_endline "jumping diff index";
+                  find_last_common_block (block :: chain_rest) headers_rest
+                end
+              else
+                begin
+                  (* Printf.printf "block  -> index: %d   hash: %s\n" block.index block.hash; *)
+                  (* Printf.printf "header -> index: %d   hash: %s\n\n" header.index header.hash; *)
+                  if block.hash = header.hash then Some block
+                  else find_last_common_block chain_rest headers_rest
+                end
+        in
+
+        let last_common_block = find_last_common_block curr_chain peer_headers in
+        match last_common_block with
+        | None ->
+          print_endline "No common block found with the peer chain. Rejecting the block.";
+          Lwt.return_false
+        | Some common_block ->
+          Printf.printf "Common block found index: %d\n" common_block.index;
+
+          let uri = Uri.of_string 
+            (peer_addr ^ "/blocks?start=" ^ (string_of_int (common_block.index+1)) ^ "&end=" ^ block_end) in
+
+          (* Printf.printf "BLOCKS REQUEST URI: %s\n\n"  *)
+          (*   (peer_addr ^ "/blocks?start=" ^ (string_of_int (common_block.index+1)) ^ "&end=" ^ block_end); *)
+
+          let* _, body = Cohttp_lwt_unix.Client.get uri in
+          let* blocks_json = Cohttp_lwt.Body.to_string body in
+
+          let new_blocks: Block.block list = 
+            Yojson.Basic.from_string blocks_json 
+            |> blocks_of_json 
+            |> List.rev
+          in
+
+          (* Printf.printf "\n\nTHE COMMON BLOCK IS: %s\n\n" (Block.string_of_block common_block); *)
+          (* Printf.printf "\n\nTHE NEW BLOCKS ARE: %s\n\n" (String.concat "" (List.map Block.string_of_block new_blocks)); *)
+
+          let rec validate_new_blocks prev_block new_blocks =
+            match new_blocks with
+            | [] -> Ok ()
+            | block :: rest ->
+              if Block.validate_block block prev_block then
+                begin
+                  Printf.printf "block index %d is valid\n" block.index;
+                  validate_new_blocks block rest
+                end
+              else
+                Error ("Invalid block found: " ^ string_of_block block)
+          in
+          (match validate_new_blocks common_block new_blocks with
+          | Ok () ->
+               (* TODO: update local chain *)
+               print_endline "All new blocks are valid. Updating local chain.";
+               Lwt.return_true
+          | Error msg ->
+            print_endline msg;
+            Lwt.return_false)
+          (* validate new blocks *)
+          (* curr_chain = old_chain until common_block + new_blocks*)
     end
-  else if Block.validate_block received_block prev_block then (
+  else if Block.validate_block received_block prev_block then 
     try
       (* List.iter (fun tx ->  *)
       (*   if not (Transaction.validate_transaction tx) then  *)
@@ -200,11 +312,11 @@ let handle_block_proposal_request node body =
     with 
     | Failure msg ->
       print_endline msg;
-      Lwt.return_false)
+      Lwt.return_false
   else 
     Lwt.return_false 
 
-let mine_block curr_state transactions (prev_block: Block.block) difficulty miner_addr: (MKPTrie.trie * Block.block) t  =
+let mine_block curr_state transactions (prev_block: Block.block) difficulty miner_addr  =
   let open Block in
 
   (* TODO: validate broadcasting response *)
@@ -259,8 +371,8 @@ let mine_block curr_state transactions (prev_block: Block.block) difficulty mine
 
 let mining_routine node = 
   let threshold = 0 in
-  (* let time_delay = 10.0 in *)
-  let time_delay = float_of_int (Random.int 10) in
+  let time_delay = 10.0 in
+  (* let time_delay = float_of_int (Random.int 10) in *)
   let rec aux () = 
     let* mining = Lwt_mvar.take node.mining in
     if mining then
@@ -316,6 +428,7 @@ let mining_routine node =
   aux ()
 
 let http_server node =
+  let open Cohttp in
   let cors_headers = Cohttp.Header.of_list [
     ("Access-Control-Allow-Origin", "*");
     ("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -331,14 +444,24 @@ let http_server node =
         Server.respond_string ~status:`OK ~body:"Transaction received" ()
     | (`POST, "/block") ->
         print_endline "\nblock proposal received\n";
-
         let* _ = Lwt_mvar.take node.mining in
         let* _ = Lwt_mvar.put node.mining false in
 
         print_endline "mining = false\n";
 
-        body |> Cohttp_lwt.Body.to_string >>= fun body ->
-        let* result = handle_block_proposal_request node body in
+        let* body = body |> Cohttp_lwt.Body.to_string in
+        let json_body = Yojson.Basic.from_string body in
+
+        let peer_addr = 
+          json_body 
+          |> Yojson.Basic.Util.member "peer_addr" 
+          |> Yojson.Basic.Util.to_string in
+
+        let block_json = 
+          json_body 
+          |> Yojson.Basic.Util.member "block" in
+
+        let* result = handle_block_proposal_request node peer_addr block_json in
         let* _ = Lwt_mvar.take node.mining in
         let* _ = Lwt_mvar.put node.mining true in
 
@@ -374,7 +497,7 @@ let http_server node =
         let uri = req |> Request.uri in
         let query = Uri.query uri in
 
-        let max_blocks_per_request = 10 in
+        let max_blocks_per_request = 20 in
         let start_param = List.assoc_opt "start" query in
         let end_param = List.assoc_opt "end" query in
 
@@ -393,17 +516,26 @@ let http_server node =
         let start_idx = max 0 start_idx in
         let end_idx = min (List.length chain) end_idx in
 
-        let blocks_in_range = List.filteri (fun i _ -> i >= start_idx && i < end_idx) chain in
+        let blocks_in_range = List.filter
+          (fun (block: Block.block) -> block.index >= start_idx && block.index <= end_idx) 
+          chain
+        in
 
-        let chain_json_list = List.map (fun bl -> Block.block_to_json bl) blocks_in_range in
+        let chain_json_list = List.map
+          (fun bl -> Block.block_to_json bl)
+          blocks_in_range 
+        in
+
         let json_body = `List chain_json_list |> Yojson.Basic.to_string in
 
         Server.respond_string ~headers:cors_headers ~status:`OK ~body:json_body ()
     | (`GET, "/headers") ->
+        Printf.printf "\n\nRECEBENDO REQUEST HEADERS\n\n";
+
         let uri = req |> Request.uri in
         let query = Uri.query uri in
 
-        let max_headers_per_request = 10 in
+        let max_headers_per_request = 20 in
         let start_param = List.assoc_opt "start" query in
         let end_param = List.assoc_opt "end" query in
 
@@ -422,8 +554,16 @@ let http_server node =
         let start_idx = max 0 start_idx in
         let end_idx = min (List.length chain) end_idx in
 
-        let headers_in_range = List.filteri (fun i _ -> i >= start_idx && i < end_idx) chain in
-        let headers_json_list = List.map (fun block -> Block.block_to_header block |> Block.block_header_to_json) headers_in_range in
+        let blocks_in_range = List.filter
+          (fun (block: Block.block) -> block.index >= start_idx && block.index <= end_idx) 
+          chain
+        in
+
+        let headers_json_list = 
+          List.map (fun b -> Block.block_to_header b |> Block.block_header_to_json)
+          blocks_in_range 
+        in
+
         let json_body = `List headers_json_list |> Yojson.Basic.to_string in
 
         Server.respond_string ~headers:cors_headers ~status:`OK ~body:json_body ()

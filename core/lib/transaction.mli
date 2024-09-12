@@ -46,6 +46,7 @@ module Block : sig
   }
 
   val string_of_block: block -> string
+  val string_of_block_header: block_header -> string
   val hash_block: block -> string
   val is_valid_pow: string -> int -> bool
   val calculate_difficulty: block -> int

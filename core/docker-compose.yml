@@ -43,11 +43,6 @@ services:
     networks:
       - agora_network
 
-# volumes:
-#   node1_build:
-#   node2_build:
-#   node3_build:
-
 networks:
   agora_network:
     driver: bridge
