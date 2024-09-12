@@ -9,7 +9,6 @@ type node = {
   miner_addr: string;
   global_state: MKPTrie.trie Lwt_mvar.t;
   known_peers: string list Lwt_mvar.t;
-  blocks_to_broadcast: Block.block list Lwt_mvar.t;
 }
 
 val add_transaction: (Transaction.transaction * bool) list Lwt_mvar.t -> Transaction.transaction -> unit Lwt.t

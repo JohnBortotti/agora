@@ -335,16 +335,16 @@ module Account = struct
         { address; balance = int_of_string balance; nonce = int_of_string nonce; storage_root; code_hash }
     | _ -> failwith "Invalid RLP encoding for account"
 
+  let get_account state address =
+    match MKPTrie.lookup state address with
+      | Some (MKPTrie.Leaf (_, account_data)) -> Some (decode (RLP.decode account_data))
+      | Some (MKPTrie.Branch (_, some_data)) ->
+          (match some_data with
+          | Some account_data -> Some (decode (RLP.decode account_data))
+          | _ -> None)
+      | _ -> None
+
   let apply_transaction state tx =
-    let get_account state address =
-      match MKPTrie.lookup state address with
-        | Some (MKPTrie.Leaf (_, account_data)) -> Some (decode (RLP.decode account_data))
-        | Some (MKPTrie.Branch (_, some_data)) ->
-            (match some_data with
-            | Some account_data -> Some (decode (RLP.decode account_data))
-            | _ -> None)
-        | _ -> None
-    in
     match get_account state tx.sender with
     | None -> Error "Sender account not found"
     | Some sender_account -> 
@@ -371,7 +371,9 @@ module Account = struct
           |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
         Ok (new_state)
       | Some receiver_account ->
-        let updated_receiver_account = { receiver_account with balance = receiver_account.balance + tx.amount } in
+        let updated_receiver_account = { 
+          receiver_account with balance = receiver_account.balance + tx.amount 
+        } in
         let updated_sender_account = { sender_account with
           balance = sender_account.balance - tx.amount;
           nonce = sender_account.nonce + 1;
@@ -380,4 +382,25 @@ module Account = struct
           MKPTrie.insert state receiver_account.address (encode updated_receiver_account) 
           |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
         Ok (new_state)
+
+  let apply_transaction_coinbase state tx =
+    match get_account state tx.receiver with
+    | None ->
+      let new_receiver_account = {
+        address = tx.receiver;
+        balance = tx.amount;
+        nonce = 0;
+        storage_root = "";
+        code_hash = "";
+      } in
+      let new_state = MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) in
+      Ok(new_state)
+    | Some receiver_account ->
+      let updated_receiver_account = {
+        receiver_account with balance = receiver_account.balance + tx.amount
+      } in
+      let new_state =
+        MKPTrie.insert state receiver_account.address (encode updated_receiver_account) in
+      Ok(new_state)
+
 end

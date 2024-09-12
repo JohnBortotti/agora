@@ -16,8 +16,10 @@ node implementation:
       - [x] broadcast proposed block (if valid)
   - [ ] state 
     - [x] account global state (balance, nonce, storageRoot, codeHash)
-    - [ ] add miner fee after block inclusion
+    - [x] add miner fee after block inclusion
     - [ ] reverse transactions if network choose another block
+    - [x] apply coinbase transaction on state
+    - [ ] re-broadcast incoming blocks
     - [ ] contract storage
   - fixes
     - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
@@ -28,7 +30,13 @@ node implementation:
     - [ ] gossip protocol
     - [ ] paginate /chain endpoint
     - [x] add transactions.hash field
+
+notes:
+  - consider that timeouts before mining can be useful, since the peer can receive transactions 
+  in that interval, resulting in a longer chain resolution compared to nodes that start mining
+  instantly, winning by "most work chain". also, implement the "most work chain" algorithm
  *)
+
 open Transaction
 open State
 open Lwt
@@ -43,7 +51,6 @@ type node = {
   miner_addr: string;
   global_state: MKPTrie.trie Lwt_mvar.t;
   known_peers: string list Lwt_mvar.t;
-  blocks_to_broadcast: Block.block list Lwt_mvar.t;
 }
 
 let add_transaction pool tx =
@@ -159,27 +166,6 @@ let broadcast_block peers_list block =
   let* _ = Lwt_list.iter_p broadcast_to_peer peers_list in
   Lwt.return_unit
 
-let rec broadcast_block_routine node =
-  let time_delay = 6. in
-  let* _ = Lwt_unix.sleep time_delay in
-  let* blocks = Lwt_mvar.take node.blocks_to_broadcast in
-  let* _ = Lwt_mvar.put node.blocks_to_broadcast [] in
-  
-  print_endline "looking for blocks to broadcast\n";
-
-  if List.length blocks > 0 then (
-    print_endline "broadcasting blocks routine\n";
-
-    let* peers = Lwt_mvar.take node.known_peers in
-    let* _ = Lwt_mvar.put node.known_peers peers in
-    let* _ = Lwt_list.iter_p (fun block -> 
-      broadcast_block peers block;
-    ) blocks in
-    broadcast_block_routine node
-  ) else (
-    broadcast_block_routine node
-  )
-
 let handle_block_proposal_request node peer_addr body =
   let open Block in
   
@@ -192,7 +178,7 @@ let handle_block_proposal_request node peer_addr body =
 
   (* TODO: test sending a malicious block *)
   (* TODO: revert back global state until common_block*)
-  (* TODO: apply received chain *)
+  (* TODO: apply incoming blocks to state *)
   (* TODO: remove trasactions from mempool *)
 
   if received_block.index > prev_block.index+1 then
@@ -265,28 +251,43 @@ let handle_block_proposal_request node peer_addr body =
           in
           (match validate_new_blocks common_block new_blocks with
           | Ok () ->
-               (* TODO: update local chain *)
-               (* curr_chain = old_chain until common_block + new_blocks*)
-               print_endline "All new blocks are valid. Updating local chain.";
-               Lwt.return_true
+            let current_trusted_chain = List.filter
+              (fun (block: Block.block) -> block.index <= common_block.index)
+              curr_chain
+            in
+            let new_chain = List.rev (List.append current_trusted_chain new_blocks) in
+            let* _ = Lwt_mvar.take node.blockchain in
+            let* _ = Lwt_mvar.put node.blockchain new_chain in
+
+            let* peers_list = Lwt_mvar.take node.known_peers in
+            let* _ = Lwt_mvar.put node.known_peers peers_list in
+            let* _ = broadcast_block peers_list received_block in
+
+            print_endline "All new blocks are valid. Updating local chain.";
+
+            Lwt.return_true
           | Error msg ->
             print_endline msg;
             Lwt.return_false)
     end
   else if Block.validate_block received_block prev_block then 
     try
-      (* TODO: validate incoming block transactions *)
       print_endline "appending received block";
 
       let* transaction_pool = Lwt_mvar.take node.transaction_pool in
       let updated_transaction_pool = List.filter (fun (mem_tx, _) ->
-        not (List.exists (fun block_tx -> block_tx.Transaction.hash = mem_tx.Transaction.hash) received_block.transactions)
+        not (List.exists (fun block_tx -> block_tx.Transaction.hash = mem_tx.Transaction.hash)
+        received_block.transactions)
       ) transaction_pool in
       let* _ = Lwt_mvar.put node.transaction_pool updated_transaction_pool in
 
       let new_chain = received_block :: curr_chain in
       let* _ = Lwt_mvar.take node.blockchain in
       let* _ = Lwt_mvar.put node.blockchain new_chain in
+
+      let* peers_list = Lwt_mvar.take node.known_peers in
+      let* _ = Lwt_mvar.put node.known_peers peers_list in
+      let* _ = broadcast_block peers_list received_block in
 
       Lwt.return_true
     with 
@@ -299,7 +300,6 @@ let handle_block_proposal_request node peer_addr body =
 let mine_block curr_state transactions (prev_block: Block.block) difficulty miner_addr  =
   let open Block in
 
-  (* TODO: validate broadcasting response *)
   let coinbase_tx: Transaction.transaction = {
     hash = "";
     sender = "0";
@@ -325,8 +325,15 @@ let mine_block curr_state transactions (prev_block: Block.block) difficulty mine
             apply_transactions state rest))
   in
 
-  let block_transactions = coinbase_tx :: transactions in
-  let updated_state = apply_transactions curr_state block_transactions in
+  let updated_state = 
+    (match Account.apply_transaction_coinbase curr_state coinbase_tx with
+    | Ok new_state ->
+        print_endline "Coinbase transaction executed!\n";
+        apply_transactions new_state transactions
+    | _ -> 
+        print_endline "Coinbase transaction error";
+        apply_transactions curr_state transactions) 
+  in
   let state_root = MKPTrie.hash updated_state in
 
   let rec mine nonce =
@@ -335,7 +342,7 @@ let mine_block curr_state transactions (prev_block: Block.block) difficulty mine
       index = prev_block.index + 1;
       previous_hash = prev_block.hash;
       timestamp = Unix.time ();
-      transactions = block_transactions;
+      transactions = (coinbase_tx :: transactions);
       miner = miner_addr;
       state_root = state_root;
       nonce = nonce;
@@ -344,14 +351,14 @@ let mine_block curr_state transactions (prev_block: Block.block) difficulty mine
     } in
     let candidate_hash = hash_block { candidate_block with hash = "" } in 
     if is_valid_pow candidate_hash difficulty then 
-      Lwt.return (updated_state, { candidate_block with hash = candidate_hash })
+      (Printf.printf "\nmined block!\n\n";
+      Lwt.return (updated_state, { candidate_block with hash = candidate_hash }))
     else
       mine (nonce + 1)
     in mine 0
 
 let mining_routine node = 
   let threshold = 0 in
-  (* let time_delay = 10.0 in *)
   let time_delay = float_of_int (Random.int 10) in
   let rec aux () = 
     let* mining = Lwt_mvar.take node.mining in
@@ -450,10 +457,6 @@ let http_server node =
         (* TODO: apply transactions on state *)
         (match result with
         | true -> (
-          let block = Yojson.Basic.from_string body |> block_of_json in
-          let* curr_blocks = Lwt_mvar.take node.blocks_to_broadcast in
-          let all_blocks = block :: curr_blocks in
-          let* _ = Lwt_mvar.put node.blocks_to_broadcast all_blocks in
           Server.respond_string ~status:`OK ~body:"Block received is valid" ())
         | false -> 
           Server.respond_string ~status:`Bad_request ~body:"Block received is invalid" ()
@@ -553,12 +556,12 @@ let http_server node =
   let server = Server.make ~callback () in
   Server.create ~mode:(`TCP (`Port 8080)) server
 
+(* TODO: on peer start, check other peers chain to update the local state *)
 let run_node node =
   let main_loop =
     Lwt.join [
       validate_transaction_pool node;
       mining_routine node;
-      broadcast_block_routine node;
       http_server node
     ] in
   Lwt_main.run main_loop
