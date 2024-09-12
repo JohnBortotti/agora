@@ -201,28 +201,24 @@ let handle_block_proposal_request node peer_addr body =
 
   if received_block.index > prev_block.index+1 then
       begin
-        Printf.printf "RECEBENDO UMA CHAIN MAIOR\n";
+        Printf.printf "receiving longer chain\n";
+        Printf.printf "receiving block index: %d\n" received_block.index;
 
         let block_end = string_of_int (received_block.index) in
         let block_start = string_of_int (max 0 (prev_block.index - 20)) in
-        let uri = Uri.of_string (peer_addr ^ "/headers?start=" ^ block_start ^ "&end=" ^ block_end) in
-
-        (* Printf.printf "REQUEST URI: %s\n\n"  *)
-        (*  (peer_addr ^ "/headers?start=" ^ block_start ^ "&end=" ^ block_end); *)
-
-        Printf.printf "RECEIVING BLOCK: %s\n\n" (Block.string_of_block received_block);
+        let uri = Uri.of_string
+          (peer_addr ^ "/headers?start=" ^ block_start ^ "&end=" ^ block_end) 
+        in
 
         let* _, body = Cohttp_lwt_unix.Client.get uri in
         let* headers_json = Cohttp_lwt.Body.to_string body in
-        let peer_headers = Yojson.Basic.from_string headers_json |> block_headers_of_json in
-
-        (* print_endline"\n\n\n"; *)
-        (* List.iter (fun f -> print_endline (string_of_block_header f)) peer_headers; *)
-        (* print_endline"\n\n\n"; *)
+        let peer_headers = 
+          Yojson.Basic.from_string headers_json 
+          |> block_headers_of_json 
+        in
 
         let rec find_last_common_block (chain: Block.block list) (headers: Block.block_header list) =
-          Printf.printf "searching for last common block\n";
-          (* verify if the common block is before request interval *)
+          (* TODO: verify if the common block is before request interval *)
           match chain, headers with
             | [], _ | _, [] -> None
             | block :: chain_rest, header :: headers_rest ->
@@ -233,8 +229,6 @@ let handle_block_proposal_request node peer_addr body =
                 end
               else
                 begin
-                  (* Printf.printf "block  -> index: %d   hash: %s\n" block.index block.hash; *)
-                  (* Printf.printf "header -> index: %d   hash: %s\n\n" header.index header.hash; *)
                   if block.hash = header.hash then Some block
                   else find_last_common_block chain_rest headers_rest
                 end
@@ -249,10 +243,8 @@ let handle_block_proposal_request node peer_addr body =
           Printf.printf "Common block found index: %d\n" common_block.index;
 
           let uri = Uri.of_string 
-            (peer_addr ^ "/blocks?start=" ^ (string_of_int (common_block.index+1)) ^ "&end=" ^ block_end) in
-
-          (* Printf.printf "BLOCKS REQUEST URI: %s\n\n"  *)
-          (*   (peer_addr ^ "/blocks?start=" ^ (string_of_int (common_block.index+1)) ^ "&end=" ^ block_end); *)
+            (peer_addr ^ "/blocks?start=" ^ (string_of_int (common_block.index+1)) ^ "&end=" ^ block_end)
+          in
 
           let* _, body = Cohttp_lwt_unix.Client.get uri in
           let* blocks_json = Cohttp_lwt.Body.to_string body in
@@ -263,16 +255,12 @@ let handle_block_proposal_request node peer_addr body =
             |> List.rev
           in
 
-          (* Printf.printf "\n\nTHE COMMON BLOCK IS: %s\n\n" (Block.string_of_block common_block); *)
-          (* Printf.printf "\n\nTHE NEW BLOCKS ARE: %s\n\n" (String.concat "" (List.map Block.string_of_block new_blocks)); *)
-
           let rec validate_new_blocks prev_block new_blocks =
             match new_blocks with
             | [] -> Ok ()
             | block :: rest ->
               if Block.validate_block block prev_block then
                 begin
-                  Printf.printf "block index %d is valid\n" block.index;
                   validate_new_blocks block rest
                 end
               else
