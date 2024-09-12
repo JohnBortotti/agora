@@ -142,6 +142,25 @@ module Transaction = struct
             false
       end
 
+  (* TODO: validate coinbase tx signature? *)
+  let validate_transaction_coinbase tx =
+    if tx.hash <> "" then
+      false
+    else if tx.sender <> "0" then
+      false
+    else if tx.amount <> 1 then
+      false
+    else if tx.gas_limit <> 0 then
+      false
+    else if tx.gas_price <> 0 then
+      false
+    else if tx.nonce <> 0 then
+      false
+    else if tx.payload <> "coinbase" then
+      false
+    else 
+      true
+
   let string_of_transaction tx =
     "hash: " ^ tx.hash ^ "\n" ^      
     "sender: " ^ tx.sender ^ "\n" ^
@@ -285,6 +304,28 @@ module Block = struct
     in
     int_of_float (float_of_int prev_block.difficulty *. adjustment_factor)
 
+  let validate_block_transactions block = 
+    match block.transactions with
+    | [] -> 
+      print_endline "block doesnt have coinbase transaction";
+      false
+    | coinbase :: rest ->
+      if Transaction.validate_transaction_coinbase coinbase then
+        begin
+          let rec aux = function 
+          | [] -> true
+          | tx :: rest ->
+              if Transaction.validate_transaction tx then
+                aux rest
+              else 
+                false
+          in
+          aux rest
+        end
+      else 
+        (print_endline "invalid coinbase transaction";
+        false)
+
   let validate_block block prev_block =
     let expected_hash = hash_block block in
     let difficulty = calculate_difficulty prev_block in
@@ -301,6 +342,12 @@ module Block = struct
       (print_endline "invalid block index\n";
       false)
     else
-      (print_endline "block is valid\n";
-      true)
+      begin
+        print_endline "validating block transactions";
+        if validate_block_transactions block then
+          (print_endline "block is valid\n";
+          true)
+        else
+          false
+      end
 end

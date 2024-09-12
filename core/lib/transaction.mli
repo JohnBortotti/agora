@@ -17,6 +17,7 @@ module Transaction : sig
 
   val hash_transaction: transaction -> string
   val validate_transaction: transaction -> bool
+  val validate_transaction_coinbase: transaction -> bool
   val string_of_transaction: transaction -> string
   val string_of_transaction_compact: transaction -> string
   val transaction_to_json: transaction -> Yojson.Basic.t
@@ -51,6 +52,7 @@ module Block : sig
   val is_valid_pow: string -> int -> bool
   val calculate_difficulty: block -> int
   val validate_block: block -> block -> bool
+  val validate_block_transactions: block -> bool
   val block_to_json: block -> Yojson.Basic.t
   val block_to_json_string: block -> string
   val block_to_header: block -> block_header

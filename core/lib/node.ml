@@ -190,14 +190,10 @@ let handle_block_proposal_request node peer_addr body =
 
   let prev_block = List.hd curr_chain in
 
-  (* TODO: validate the first transaction "coinbase" *)
-  (* TODO: validate if the chain received is longer*)
   (* TODO: test sending a malicious block *)
-
-  (* get longer chain and discover wich block is safe (last block agreed on network and local) *)
-  (* validate received chain *)
-  (* apply received chain *)
-  (* remove trasactions from mempool *)
+  (* TODO: revert back global state until common_block*)
+  (* TODO: apply received chain *)
+  (* TODO: remove trasactions from mempool *)
 
   if received_block.index > prev_block.index+1 then
       begin
@@ -217,7 +213,8 @@ let handle_block_proposal_request node peer_addr body =
           |> block_headers_of_json 
         in
 
-        let rec find_last_common_block (chain: Block.block list) (headers: Block.block_header list) =
+        let rec find_last_common_block 
+          (chain: Block.block list) (headers: Block.block_header list) =
           (* TODO: verify if the common block is before request interval *)
           match chain, headers with
             | [], _ | _, [] -> None
@@ -269,21 +266,16 @@ let handle_block_proposal_request node peer_addr body =
           (match validate_new_blocks common_block new_blocks with
           | Ok () ->
                (* TODO: update local chain *)
+               (* curr_chain = old_chain until common_block + new_blocks*)
                print_endline "All new blocks are valid. Updating local chain.";
                Lwt.return_true
           | Error msg ->
             print_endline msg;
             Lwt.return_false)
-          (* validate new blocks *)
-          (* curr_chain = old_chain until common_block + new_blocks*)
     end
   else if Block.validate_block received_block prev_block then 
     try
-      (* List.iter (fun tx ->  *)
-      (*   if not (Transaction.validate_transaction tx) then  *)
-      (*     raise (Failure "Invalid transaction found on block") *)
-      (* ) received_block.transactions; *)
-
+      (* TODO: validate incoming block transactions *)
       print_endline "appending received block";
 
       let* transaction_pool = Lwt_mvar.take node.transaction_pool in
@@ -359,8 +351,8 @@ let mine_block curr_state transactions (prev_block: Block.block) difficulty mine
 
 let mining_routine node = 
   let threshold = 0 in
-  let time_delay = 10.0 in
-  (* let time_delay = float_of_int (Random.int 10) in *)
+  (* let time_delay = 10.0 in *)
+  let time_delay = float_of_int (Random.int 10) in
   let rec aux () = 
     let* mining = Lwt_mvar.take node.mining in
     if mining then
