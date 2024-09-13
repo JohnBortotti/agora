@@ -480,7 +480,6 @@ let http_server node =
         let uri = req |> Request.uri in
         let query = Uri.query uri in
 
-        let max_blocks_per_request = 20 in
         let start_param = List.assoc_opt "start" query in
         let end_param = List.assoc_opt "end" query in
 
@@ -489,8 +488,8 @@ let http_server node =
           | _ -> 0
         in
         let end_idx = match end_param with
-          | Some [end_str] -> int_of_string_opt end_str |> Option.value ~default:(start_idx+max_blocks_per_request)
-          | _ -> (start_idx+max_blocks_per_request)
+          | Some [end_str] -> int_of_string_opt end_str |> Option.value ~default:(start_idx+20)
+          | _ -> (start_idx+20)
         in
 
         let* chain = Lwt_mvar.take node.blockchain in
@@ -518,7 +517,6 @@ let http_server node =
         let uri = req |> Request.uri in
         let query = Uri.query uri in
 
-        let max_headers_per_request = 20 in
         let start_param = List.assoc_opt "start" query in
         let end_param = List.assoc_opt "end" query in
 
@@ -527,8 +525,8 @@ let http_server node =
           | _ -> 0
         in
         let end_idx = match end_param with
-          | Some [end_str] -> int_of_string_opt end_str |> Option.value ~default:max_headers_per_request
-          | _ -> max_headers_per_request
+          | Some [end_str] -> int_of_string_opt end_str |> Option.value ~default:(start_idx+20)
+          | _ -> (start_idx+20)
         in
 
         let* chain = Lwt_mvar.take node.blockchain in

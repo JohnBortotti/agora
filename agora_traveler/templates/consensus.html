@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+      .link {
+        color: blue;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
+      .mleft {
+        margin-left: 20px;
+      }
+
+      .valid {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        padding: 10px;
+        border-radius: 5px;
+      }
+
+      .invalid {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        padding: 10px;
+        border-radius: 5px;
+      }
+
+      .peer-diff {
+        background-color: #ffeeba;
+        padding: 10px;
+        margin-top: 10px;
+        border-radius: 3px;
+      }
+
+      .block-container {
+        margin: 15px 0;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+
+    </style>
+  </head>
+  <body>
+    {% include 'navbar.html' %}
+
+    <h1>{{ title }}</h1>
+
+    <div>
+      <form method="GET" action="/consensus">
+        <label for="start">Start:</label>
+        <input type="text" id="start" name="start" value="{{ request.args.get('start', '0') }}" required><br><br>
+
+        <label for="end">End:</label>
+        <input type="text" id="end" name="end" value="{{ request.args.get('end', '20') }}" required><br><br>
+
+        <input type="submit" value="Submit">
+      </form>
+    </div>
+    <br>
+
+    {% for block in validation_results %}
+    <div class="block-container {% if block.is_valid %}valid{% else %}invalid{% endif %}">
+      <details>
+        <summary>
+          <span class="link">
+            Block #{{ block.block.index }} ({{ block.block.hash }}) - 
+            {% if block.is_valid %}
+            Valid
+            {% else %}
+            Divergent
+            {% endif %}
+          </span>
+        </summary>
+
+        <div class="mleft">
+          <p><strong>Block Index:</strong> {{ block.block.index }}</p>
+          <p><strong>Hash:</strong> {{ block.block.hash }}</p>
+          <p><strong>Previous hash:</strong> {{ block.block.previous_hash }}</p>
+          <p><strong>Timestamp:</strong> {{ block.block.timestamp }}</p>
+          <p><strong>Miner:</strong> {{ block.block.miner }}</p>
+          <p><strong>State root:</strong> {{ block.block.state_root }}</p>
+          
+          <details>
+            <summary><span class="link">Transactions</span></summary>
+            {% for transaction in block.block.transactions %}
+            <br>
+            <div>
+              <details class="mleft">
+                <summary><span class="link">Tx #{{ transaction.hash }}</span></summary>
+                <div class="mleft">
+                  <p><strong>Hash:</strong> {{ transaction.hash }}</p>
+                  <p><strong>Sender:</strong> {{ transaction.sender }}</p>
+                  <p><strong>Receiver:</strong> {{ transaction.receiver }}</p>
+                  <p><strong>Amount:</strong> {{ transaction.amount }}</p>
+                  <p><strong>Payload:</strong> {{ transaction.payload }}</p>
+                </div>
+              </details>
+            </div>
+            {% endfor %}
+          </details>
+
+          <!-- Divergent peers section -->
+          {% if not block.is_valid %}
+          <div class="peer-diff">
+            <h4>Diverging Peers:</h4>
+            <ul>
+              {% for peer in block.diverging_peers %}
+              <li>
+                <strong>{{ peer.peer }}:</strong> 
+                Block Index: {{ peer.peer_block.index }}, 
+                Hash: {{ peer.peer_block.hash }}
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </div>
+      </details>
+    </div>
+    <br>
+    {% endfor %}
+  </body>
+</html>
+
