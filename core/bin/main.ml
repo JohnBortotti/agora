@@ -1,9 +1,5 @@
 (*
 TODO:
-  - [ ] tests 
-    - [ ] test state.ml
-    - [ ] test transaction.ml
-    - [x] test pow.ml
   - [ ] node
   - [ ] jsonrpc
   - [ ] consensus (forks and conflicts)

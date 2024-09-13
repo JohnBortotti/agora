@@ -7,7 +7,6 @@ app = Flask(__name__)
 def home():
 
   node = request.args.get('node', default="http://node1:8080")
-
   start_query = request.args.get('start', default="0")
   end_query = request.args.get('end', default="20")
 

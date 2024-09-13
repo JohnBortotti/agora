@@ -1,75 +1,78 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ title }}</title>
-		<style>
-			.link {
-				color: blue;
-				text-decoration: underline;
-				cursor: pointer;
-			}
+    <style>
+      .link {
+	color: blue;
+	text-decoration: underline;
+	cursor: pointer;
+      }
 
-			.mleft {
-				margin-left: 20px;
-			}
-		</style>
-</head>
-<body>
+      .mleft {
+	margin-left: 20px;
+      }
+    </style>
+  </head>
+  <body>
     <h1>{{ title }}</h1>
 
-		<div>
-			<form method="GET" action="/">
-				<label for="start">Start:</label>
-				<input type="text" id="start" name="start" value="{{ request.args.get('start', '0') }}" required><br><br>
+    <div>
+      <form method="GET" action="/">
+	<label for="node">Node:</label>
+	<input type="text" id="end" name="node" value="{{ request.args.get('node', 'http://node1:8080') }}" required><br><br>
 
-				<label for="end">End:</label>
-				<input type="text" id="end" name="end" value="{{ request.args.get('end', '20') }}" required><br><br>
+	<label for="start">Start:</label>
+	<input type="text" id="start" name="start" value="{{ request.args.get('start', '0') }}" required><br><br>
 
-				<input type="submit" value="Submit">
-			</form>
-		</div>
-		<br>
+	<label for="end">End:</label>
+	<input type="text" id="end" name="end" value="{{ request.args.get('end', '20') }}" required><br><br>
+
+	<input type="submit" value="Submit">
+      </form>
+    </div>
+    <br>
 
     {% for block in blocks %}
     <div>
-        <details>
-            <summary>
-							<span class="link">
-								Block #{{ block.index }}
-							</span>
-						</summary>
-						<div class="mleft">
-							<p><strong>Hash:</strong> {{ block.hash }}</p>
-							<p><strong>Previous hash:</strong> {{ block.previous_hash }}</p>
-							<p><strong>Timestamp:</strong> {{ block.timestamp }}</p>
-							<p><strong>Miner:</strong> {{ block.miner }}</p>
-							<p><strong>State root:</strong> {{ block.state_root }}</p>
-							<details>
-								<summary><span class="link">Transactions</span></summary>
-									{% for transaction in block.transactions %}
-									<br>
-									<div>
-										<details class="mleft">
-										<summary><span class="link">Tx #{{ transaction.hash }}</span></summary>
-											<div class="mleft">
-												<p><strong>Hash:</strong> {{ transaction.hash }}</p>
-												<p><strong>Sender:</strong> {{ transaction.sender }}</p>
-												<p><strong>Receiver:</strong> {{ transaction.receiver }}</p>
-												<p><strong>Amount:</strong> {{ transaction.amount }}</p>
-												<p><strong>Payload:</strong> {{ transaction.payload }}</p>
-											</div>
-										</details>
-									</div>
-									{% endfor %}
-							</details>
-						</div>
-        </details>
+      <details>
+	<summary>
+	  <span class="link">
+	    Block #{{ block.index }}
+	  </span>
+	</summary>
+	<div class="mleft">
+	  <p><strong>Hash:</strong> {{ block.hash }}</p>
+	  <p><strong>Previous hash:</strong> {{ block.previous_hash }}</p>
+	  <p><strong>Timestamp:</strong> {{ block.timestamp }}</p>
+	  <p><strong>Miner:</strong> {{ block.miner }}</p>
+	  <p><strong>State root:</strong> {{ block.state_root }}</p>
+	  <details>
+	    <summary><span class="link">Transactions</span></summary>
+	    {% for transaction in block.transactions %}
+	    <br>
+	    <div>
+	      <details class="mleft">
+		<summary><span class="link">Tx #{{ transaction.hash }}</span></summary>
+		<div class="mleft">
+		  <p><strong>Hash:</strong> {{ transaction.hash }}</p>
+		  <p><strong>Sender:</strong> {{ transaction.sender }}</p>
+		  <p><strong>Receiver:</strong> {{ transaction.receiver }}</p>
+		  <p><strong>Amount:</strong> {{ transaction.amount }}</p>
+		  <p><strong>Payload:</strong> {{ transaction.payload }}</p>
+		</div>
+	      </details>
+	    </div>
+	    {% endfor %}
+	  </details>
+	</div>
+      </details>
     </div>
     <br>
     {% endfor %}
 
-</body>
+  </body>
 </html>
 
