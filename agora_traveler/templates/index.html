@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+		<style>
+			.link {
+				color: blue;
+				text-decoration: underline;
+				cursor: pointer;
+			}
+
+			.mleft {
+				margin-left: 20px;
+			}
+		</style>
+</head>
+<body>
+
+    <h1>{{ title }}</h1>
+
+    <!-- Loop through blocks -->
+    {% for block in blocks %}
+    <div class="block">
+        <details>
+            <summary>
+							<span class="link">
+								Block #{{ block.id }}
+							</span>
+						</summary>
+						<div class="mleft">
+							<p><strong>Hash:</strong> {{ block.hash }}</p>
+							<p><strong>Timestamp:</strong> {{ block.time }}</p>
+							<p><strong>Miner:</strong> {{ block.miner }}</p>
+							<details>
+								<summary><span class="link">Transactions</span></summary>
+									{% for transaction in block.transactions %}
+									<div>
+											<p><strong>Tx #{{ transaction.id }}:</strong>
+											{{ transaction.hash }} (from {{ transaction.from }} to {{ transaction.to }})</p>
+									</div>
+									{% endfor %}
+							</details>
+						</div>
+        </details>
+    </div>
+    <br>
+    {% endfor %}
+
+</body>
+</html>
+
