@@ -1,4 +1,4 @@
-open Transaction.Transaction
+open Transaction
 open Digestif.SHA256
 
 module RLP = struct

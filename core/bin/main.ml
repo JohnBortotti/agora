@@ -8,8 +8,8 @@ TODO:
   - [x] configs via .env
  *)
 
+open Agora_core
 open Agora_core.Node
-open Agora_core.Transaction
 
 let get_env_var var_name =
   try
@@ -33,7 +33,7 @@ let () =
 
   print_endline "running node...\n";
 
-  let genesis: Block.block = {
+  let genesis: Block.t = {
     index = 0;
     previous_hash = "";
     timestamp = 1726089622.000000;

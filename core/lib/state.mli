@@ -1,5 +1,3 @@
-open Transaction 
-
 module RLP : sig
   type t = [ `String of string | `List of t list ]
 
@@ -41,6 +39,6 @@ module Account : sig
   val string_of_account: t -> string
   val encode: t -> RLP.t
   val decode: RLP.t -> t
-  val apply_transaction: MKPTrie.trie -> Transaction.transaction -> (MKPTrie.trie, string) result
-  val apply_transaction_coinbase: MKPTrie.trie -> Transaction.transaction -> (MKPTrie.trie, string) result
+  val apply_transaction: MKPTrie.trie -> Transaction.t -> (MKPTrie.trie, string) result
+  val apply_transaction_coinbase: MKPTrie.trie -> Transaction.t -> (MKPTrie.trie, string) result
 end

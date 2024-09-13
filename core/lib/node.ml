@@ -45,8 +45,8 @@ open Cohttp_lwt_unix
 
 type node = {
   address: string;
-  transaction_pool: (Transaction.transaction * bool) list Lwt_mvar.t;
-  blockchain: Block.block list Lwt_mvar.t;
+  transaction_pool: (Transaction.t * bool) list Lwt_mvar.t;
+  blockchain: Block.t list Lwt_mvar.t;
   mining: bool Lwt_mvar.t;
   miner_addr: string;
   global_state: MKPTrie.trie Lwt_mvar.t;
@@ -79,52 +79,6 @@ let rec validate_transaction_pool node =
   let* _ = Lwt_mvar.put node.transaction_pool new_pool in
   let* _ = Lwt_unix.sleep 4.0 in
   validate_transaction_pool node
-
-let transaction_of_json json: Transaction.transaction =
-  let open Yojson.Basic.Util in
-  {
-    hash = json |> member "hash" |> to_string;
-    sender = json |> member "sender" |> to_string;
-    receiver = json |> member "receiver" |> to_string;
-    amount = json |> member "amount" |> to_int;
-    gas_limit = json |> member "gas_limit" |> to_int;
-    gas_price = json |> member "gas_price" |> to_int;
-    nonce = json |> member "nonce" |> to_int;
-    payload = json |> member "payload" |> to_string;
-    signature = json |> member "signature" |> to_string;
-  }
-
-let block_of_json json: Block.block =
-  let open Yojson.Basic.Util in
-  {
-    index = json |> member "index" |> to_int;
-    previous_hash = json |> member "previous_hash" |> to_string;
-    timestamp = json |> member "timestamp" |> to_float;
-    transactions = json |> member "transactions" |> to_list |> List.map transaction_of_json;
-    miner = json |> member "miner" |> to_string;
-    state_root = json |> member "state_root" |> to_string;
-    nonce = json |> member "nonce" |> to_int;
-    hash = json |> member "hash" |> to_string;
-    difficulty = json |> member "difficulty" |> to_int;
-  }
-
-let block_header_of_json json: Block.block_header =
-  let open Yojson.Basic.Util in
-  {
-    index = json |> member "index" |> to_int;
-    previous_hash = json |> member "previous_hash" |> to_string;
-    timestamp = json |> member "timestamp" |> to_float;
-    nonce = json |> member "nonce" |> to_int;
-    difficulty = json |> member "difficulty" |> to_int;
-    hash = json |> member "hash" |> to_string;
-  }
-
-let blocks_of_json json : Block.block list =
-  let open Yojson.Basic.Util in
-  json |> to_list |> List.map block_of_json
-
-let block_headers_of_json json =
-  json |> Yojson.Basic.Util.to_list |> List.map block_header_of_json
 
 let handle_transaction_request (node: node) (body: string) =
   let json = Yojson.Basic.from_string body in
@@ -176,7 +130,6 @@ let handle_block_proposal_request node peer_addr body =
 
   let prev_block = List.hd curr_chain in
 
-  (* TODO: test sending a malicious block *)
   (* TODO: revert back global state until common_block*)
   (* TODO: apply incoming blocks to state *)
   (* TODO: remove trasactions from mempool *)
@@ -187,7 +140,7 @@ let handle_block_proposal_request node peer_addr body =
         Printf.printf "receiving block index: %d\n" received_block.index;
 
         let block_end = string_of_int (received_block.index) in
-        let block_start = string_of_int (max 0 (prev_block.index - 20)) in
+        let block_start = string_of_int (max 0 (prev_block.index - 50)) in
         let uri = Uri.of_string
           (peer_addr ^ "/headers?start=" ^ block_start ^ "&end=" ^ block_end) 
         in
@@ -200,7 +153,7 @@ let handle_block_proposal_request node peer_addr body =
         in
 
         let rec find_last_common_block 
-          (chain: Block.block list) (headers: Block.block_header list) =
+          (chain: Block.t list) (headers: Block.header list) =
           (* TODO: verify if the common block is before request interval *)
           match chain, headers with
             | [], _ | _, [] -> None
@@ -232,7 +185,7 @@ let handle_block_proposal_request node peer_addr body =
           let* _, body = Cohttp_lwt_unix.Client.get uri in
           let* blocks_json = Cohttp_lwt.Body.to_string body in
 
-          let new_blocks: Block.block list = 
+          let new_blocks: Block.t list = 
             Yojson.Basic.from_string blocks_json 
             |> blocks_of_json 
             |> List.rev
@@ -252,7 +205,7 @@ let handle_block_proposal_request node peer_addr body =
           (match validate_new_blocks common_block new_blocks with
           | Ok () ->
             let current_trusted_chain = List.filter
-              (fun (block: Block.block) -> block.index <= common_block.index)
+              (fun (block: Block.t) -> block.index <= common_block.index)
               curr_chain
             in
             let new_chain = List.rev (List.append current_trusted_chain new_blocks) in
@@ -297,10 +250,10 @@ let handle_block_proposal_request node peer_addr body =
   else 
     Lwt.return_false 
 
-let mine_block curr_state transactions (prev_block: Block.block) difficulty miner_addr  =
+let mine_block curr_state transactions (prev_block: Block.t) difficulty miner_addr  =
   let open Block in
 
-  let coinbase_tx: Transaction.transaction = {
+  let coinbase_tx: Transaction.t = {
     hash = "";
     sender = "0";
     receiver = miner_addr;
@@ -499,7 +452,7 @@ let http_server node =
         let end_idx = min (List.length chain) end_idx in
 
         let blocks_in_range = List.filter
-          (fun (block: Block.block) -> block.index >= start_idx && block.index <= end_idx) 
+          (fun (block: Block.t) -> block.index >= start_idx && block.index <= end_idx) 
           chain
         in
 
@@ -536,7 +489,7 @@ let http_server node =
         let end_idx = min (List.length chain) end_idx in
 
         let blocks_in_range = List.filter
-          (fun (block: Block.block) -> block.index >= start_idx && block.index <= end_idx) 
+          (fun (block: Block.t) -> block.index >= start_idx && block.index <= end_idx) 
           chain
         in
 
