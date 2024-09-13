@@ -1,32 +1,18 @@
-from flask import Flask, render_template
+from flask import Flask, request, render_template
+import requests
 
 app = Flask(__name__)
 
 @app.route('/')
 def home():
 
-  blocks = [
-    {
-        "id": 123456,
-        "hash": "0xabcdef1234567890",
-        "timestamp": "2024-09-12 10:22:33",
-        "miner": "0x1234abcd...",
-        "transactions": [
-            {"id": 1, "hash": "0xabcdef01", "from": "0xaaa...", "to": "0xbbb..."},
-            {"id": 2, "hash": "0xabcdef02", "from": "0xccc...", "to": "0xddd..."},
-        ]
-    },
-    {
-        "id": 123457,
-        "hash": "0x9876543210abcdef",
-        "timestamp": "2024-09-12 10:24:12",
-        "miner": "0x4321dcba...",
-        "transactions": [
-            {"id": 3, "hash": "0x9876abcd", "from": "0xaaa...", "to": "0xbbb..."},
-            {"id": 4, "hash": "0x9876efgh", "from": "0xccc...", "to": "0xddd..."},
-        ]
-    }
-  ]
+  node = request.args.get('node', default="http://node1:8080")
+
+  start_query = request.args.get('start', default="0")
+  end_query = request.args.get('end', default="20")
+
+  r = requests.get(f'{node}/blocks?start={start_query}&end={end_query}')
+  blocks = r.json()
 
   return render_template(
     'index.html',

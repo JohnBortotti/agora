@@ -489,8 +489,8 @@ let http_server node =
           | _ -> 0
         in
         let end_idx = match end_param with
-          | Some [end_str] -> int_of_string_opt end_str |> Option.value ~default:max_blocks_per_request
-          | _ -> max_blocks_per_request
+          | Some [end_str] -> int_of_string_opt end_str |> Option.value ~default:(start_idx+max_blocks_per_request)
+          | _ -> (start_idx+max_blocks_per_request)
         in
 
         let* chain = Lwt_mvar.take node.blockchain in
