@@ -10,8 +10,4 @@ type node = {
   known_peers: string list Lwt_mvar.t;
 }
 
-val add_transaction: (Transaction.t * bool) list Lwt_mvar.t -> Transaction.t -> unit Lwt.t
-val validate_transaction_pool: node -> unit Lwt.t
-val mine_block: MKPTrie.trie -> Transaction.t list -> Block.t -> int -> string -> (MKPTrie.trie * Block.t) Lwt.t
-val mining_routine: node -> 'a Lwt.t
 val run_node: node -> unit

@@ -59,25 +59,18 @@ let add_transaction pool tx =
   Lwt_mvar.put pool updated_pool
   
 let rec validate_transaction_pool node =
-  print_endline "pool validation\n";
+  print_endline "pool validation routine\n";
   let* current_pool = Lwt_mvar.take node.transaction_pool in
   let new_pool = List.filter_map (fun (tx, verified) -> 
     if not verified then 
-      if Transaction.validate_transaction tx then (
-        print_endline "tx valid";
-        Some (tx, true)
-      )
-      else (
-        print_endline "tx invalid";
-        None
-      )
-    else (
-      print_endline "tx already verified";
-      Some (tx, verified)
-    )
+      begin
+        if Transaction.validate_transaction tx then Some (tx, true)
+        else None
+      end
+    else Some (tx, verified)
   ) current_pool in
   let* _ = Lwt_mvar.put node.transaction_pool new_pool in
-  let* _ = Lwt_unix.sleep 4.0 in
+  let* _ = Lwt_unix.sleep 3.0 in
   validate_transaction_pool node
 
 let handle_transaction_request (node: node) (body: string) =
@@ -86,6 +79,7 @@ let handle_transaction_request (node: node) (body: string) =
   add_transaction node.transaction_pool tx
 
 let broadcast_block peers_list block =
+  (* TODO: get from node.address *)
   let peer_addr = Sys.getenv "NODE_ADDR" in
 
   let block_json = Block.block_to_json block |> Yojson.Basic.to_string in
@@ -130,10 +124,6 @@ let handle_block_proposal_request node peer_addr body =
 
   let prev_block = List.hd curr_chain in
 
-  (* TODO: revert back global state until common_block*)
-  (* TODO: apply incoming blocks to state *)
-  (* TODO: remove trasactions from mempool *)
-
   if received_block.index > prev_block.index+1 then
       begin
         Printf.printf "receiving longer chain\n";
@@ -154,7 +144,7 @@ let handle_block_proposal_request node peer_addr body =
 
         let rec find_last_common_block 
           (chain: Block.t list) (headers: Block.header list) =
-          (* TODO: verify if the common block is before request interval *)
+          (* TODO: verify if the common block is out of request interval *)
           match chain, headers with
             | [], _ | _, [] -> None
             | block :: chain_rest, header :: headers_rest ->
@@ -216,6 +206,9 @@ let handle_block_proposal_request node peer_addr body =
             let* _ = Lwt_mvar.put node.known_peers peers_list in
             let* _ = broadcast_block peers_list received_block in
 
+            (* TODO: remove transactions from mempool *)
+            (* TODO: revert back global state until common_block*)
+            (* TODO: apply incoming blocks to state *)
             print_endline "All new blocks are valid. Updating local chain.";
 
             Lwt.return_true
@@ -225,6 +218,7 @@ let handle_block_proposal_request node peer_addr body =
     end
   else if Block.validate_block received_block prev_block then 
     try
+      (* TODO: apply incoming block to state *)
       print_endline "appending received block";
 
       let* transaction_pool = Lwt_mvar.take node.transaction_pool in
@@ -265,6 +259,8 @@ let mine_block curr_state transactions (prev_block: Block.t) difficulty miner_ad
     signature = "";
   } in
 
+  (* TODO: this go to state.ml *)
+  (* TODO: each transaction should generate a log with topics *)
   let rec apply_transactions state transactions = 
     (match transactions with
     | [] -> state
@@ -278,6 +274,7 @@ let mine_block curr_state transactions (prev_block: Block.t) difficulty miner_ad
             apply_transactions state rest))
   in
 
+  (* TODO: this go to state.ml *)
   let updated_state = 
     (match Account.apply_transaction_coinbase curr_state coinbase_tx with
     | Ok new_state ->
@@ -407,7 +404,6 @@ let http_server node =
 
         print_endline "mining = true\n";
 
-        (* TODO: apply transactions on state *)
         (match result with
         | true -> (
           Server.respond_string ~status:`OK ~body:"Block received is valid" ())
