@@ -1,0 +1,3 @@
+language = "C"
+include_guard = "MY_DATABASE_H"
+crate = "database"

@@ -20,33 +20,39 @@ impl Memtable {
     self.entries.get(key_str)
   }
 
-
-  pub fn insert(&mut self, key: &[u8], value: table_entry::TableEntry) {
-    let key_str = std::str::from_utf8(&key).expect("Invalid UTF-8 sequence").to_string();
-    match self.entries.insert(key_str.clone(), value) {
+  pub fn insert(&mut self, entry: table_entry::TableEntry) {
+    let key_str = std::str::from_utf8(&entry.key).expect("Invalid UTF-8 sequence").to_string();
+    match self.entries.insert(key_str.clone(), entry) {
       Some(old_value) => {
-        println!("Replaced entry for key: {}", key_str);
         self.size -= old_value.size();
         self.size += self.entries.get(&key_str).unwrap().size();
       }
       None => {
-        println!("Inserted new entry for key: {}", key_str);
         self.size += self.entries.get(&key_str).unwrap().size();
       }
     }
   }
 
+  pub fn delete(&mut self, key: &[u8], timestamp: i64) {
+    let new_entry = table_entry::TableEntry {
+      key: key.to_owned(),
+      value: None,
+      timestamp,
+      deleted: true
+    };
 
-  pub fn delete(&mut self, key: &str) -> Option<table_entry::TableEntry> {
-    match self.entries.remove(key) {
-      Some(removed_entry) => {
-        self.size -= removed_entry.size();
-        println!("Deleted entry for key: {}", key);
-        Some(removed_entry)
+    let key_str = std::str::from_utf8(key).expect("Invalid UTF-8 sequence");
+    match self.entries.get(key_str) {
+      Some(val) => {
+        if let Some(val) = &val.value {
+          self.size -= val.len();
+        }
+        if let Some(entry) = self.entries.get_mut(key_str) {
+          *entry = new_entry
+        }
       }
       None => {
-        println!("Key not found: {}", key);
-        None
+        self.entries.insert(key_str.to_string(), new_entry);
       }
     }
   }
