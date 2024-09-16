@@ -6,7 +6,7 @@ type node = {
   blockchain: Block.t list Lwt_mvar.t;
   mining: bool Lwt_mvar.t;
   miner_addr: string;
-  global_state: MKPTrie.trie Lwt_mvar.t;
+  global_state: State.t Lwt_mvar.t;
   known_peers: string list Lwt_mvar.t;
 }
 

@@ -42,3 +42,16 @@ module Account : sig
   val apply_transaction: MKPTrie.trie -> Transaction.t -> (MKPTrie.trie, string) result
   val apply_transaction_coinbase: MKPTrie.trie -> Transaction.t -> (MKPTrie.trie, string) result
 end
+
+module State : sig
+  type t = {
+    trie: MKPTrie.trie;
+    db: Database.t;
+  }
+
+  val init_state: string -> Unsigned.Size_t.t -> t
+  val get: t -> string -> MKPTrie.trie
+  val set: t -> string -> RLP.t -> t
+  val flush_to_db: t -> unit
+
+end

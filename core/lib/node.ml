@@ -42,6 +42,7 @@ open State
 open Lwt
 open Lwt.Syntax
 open Cohttp_lwt_unix
+(* open Database *)
 
 type node = {
   address: string;
@@ -49,7 +50,7 @@ type node = {
   blockchain: Block.t list Lwt_mvar.t;
   mining: bool Lwt_mvar.t;
   miner_addr: string;
-  global_state: MKPTrie.trie Lwt_mvar.t;
+  global_state: State.t Lwt_mvar.t;
   known_peers: string list Lwt_mvar.t;
 }
 
@@ -342,13 +343,15 @@ let mining_routine node =
       let difficulty = Block.calculate_difficulty prev_block in
       let miner_addr = node.miner_addr in
 
-      let* (new_state, mined_block) = mine_block curr_global_state transactions_to_mine prev_block difficulty miner_addr in
+      let* (new_state_trie, mined_block) = mine_block curr_global_state.trie transactions_to_mine prev_block difficulty miner_addr in
 
       let new_chain = mined_block :: curr_blockchain in
       let* _ = Lwt_mvar.take node.blockchain in
       let* _ = Lwt_mvar.put node.blockchain new_chain in
 
       let* _ = Lwt_mvar.take node.global_state in
+      let new_state = { curr_global_state with trie=new_state_trie } in
+      let _ = State.flush_to_db new_state in
       let* _ = Lwt_mvar.put node.global_state new_state in
       
       let* peers_list = Lwt_mvar.take node.known_peers in

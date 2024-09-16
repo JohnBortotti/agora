@@ -4,8 +4,8 @@ use std::os::raw::c_char;
 
 mod engine;
 
-// - [ ] FFI
 // - [ ] table compression
+// - [ ] handle bytes or string?
 
 #[no_mangle]
 pub extern "C" fn database_new(path: *const c_char, memtable_size: usize) -> *mut engine::Database {
@@ -18,13 +18,32 @@ pub extern "C" fn database_new(path: *const c_char, memtable_size: usize) -> *mu
 #[no_mangle]
 pub extern "C" fn database_write(db: *mut engine::Database, key: *const c_char, value: *const c_char) {
   let db = unsafe { &mut *db };
-  let key = unsafe { CStr::from_ptr(key) }.to_str().unwrap();
-  let value = unsafe { CStr::from_ptr(value) }.to_str().unwrap();
+  let key = unsafe { CStr::from_ptr(key) }.to_str();
+  let key = match key {
+    Ok(v) => v,
+    Err(e) => {
+      eprintln!("Invalid UTF-8 key sequence encountered: {:?}", e);
+      return; 
+    }
+  };
+
+  let value = unsafe { CStr::from_ptr(value) }.to_str();
+  let value = match value {
+    Ok(v) => v,
+    Err(e) => {
+      eprintln!("Invalid UTF-8 value sequence encountered: {:?}", e);
+      return; 
+    }
+  };
+
+  println!("Key as bytes: {:?}", key);
+  println!("Value as bytes: {:?}", value);
 
   db.write(
     key,
     value
     ).unwrap();
+
 }
 
 #[no_mangle]

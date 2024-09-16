@@ -151,7 +151,7 @@ module MKPTrie = struct
 
   and nibbles_to_string (nibbles: int list) : string =
     let nibble_strings = List.map string_of_int nibbles in
-    String.concat " " nibble_strings
+    String.concat "" nibble_strings
 
   let compare_nibbles (n1: int list) (n2: int list) : bool =
     if List.length n1 <> List.length n2 then
@@ -302,6 +302,37 @@ module MKPTrie = struct
         ]) in
         to_hex (digest_string rlp_encoded)
     | None -> ""
+
+  let serialize_node = function
+  | Leaf (nibbles, value) -> 
+      RLP.encode_list [RLP.encode_string (nibbles_to_string nibbles); RLP.encode_string value]
+  | Extension (nibbles, child) -> 
+      let child_hash = hash (Some child) in
+      RLP.encode_list [RLP.encode_string (nibbles_to_string nibbles); RLP.encode_string child_hash]
+  | Branch (children, value_opt) -> 
+      let children_rlp = Array.map (function
+          | None -> RLP.encode_string ""
+          | Some child -> RLP.encode_string (hash (Some child))
+        ) children
+      in
+      let value_rlp = match value_opt with
+        | Some value -> RLP.encode_string value
+        | None -> RLP.encode_string ""
+      in
+      RLP.encode_list (Array.to_list children_rlp @ [value_rlp])
+
+  let rec hash_iter f = function
+  | None -> ()
+  | Some node -> (
+      let node_hash = hash (Some node) in
+      let serialized_node = serialize_node node in
+      f node_hash serialized_node;
+      match node with
+      | Leaf _ -> ()
+      | Extension (_, child) -> hash_iter f (Some child)
+      | Branch (children, _) -> Array.iter (hash_iter f) children
+    )
+
 end
 
 module Account = struct
@@ -403,4 +434,38 @@ module Account = struct
         MKPTrie.insert state receiver_account.address (encode updated_receiver_account) in
       Ok(new_state)
 
+end
+
+module State = struct
+  type t = {
+    trie: MKPTrie.trie;
+    db: Database.t;
+  }
+
+  let init_state db_path mem_size =
+    let db = Database.create db_path mem_size in
+    let trie = None in
+    {trie; db}
+
+  let get state key =
+    MKPTrie.lookup state.trie key
+
+  let set state key value =
+    let new_trie = MKPTrie.insert state.trie key value in
+    { state with trie = new_trie }
+
+  (* TODO: create a module for util generic funcs *)
+  let hex_of_bytes bytes =
+    Bytes.fold_left (fun acc byte -> acc ^ Printf.sprintf "%02x" (int_of_char byte)) "" bytes
+
+  let flush_to_db state =
+    MKPTrie.hash_iter (fun key value ->
+      let key_bytes = Bytes.of_string key in
+      let value_bytes = Bytes.of_string value in
+
+      let key_hex = hex_of_bytes key_bytes in
+      let value_hex = hex_of_bytes value_bytes in
+
+      Database.database_write state.db key_hex value_hex
+    ) state.trie;
 end
