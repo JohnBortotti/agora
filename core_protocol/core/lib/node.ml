@@ -209,8 +209,24 @@ let handle_block_proposal_request node peer_addr body =
             let* _ = broadcast_block peers_list received_block in
 
             (* TODO: remove transactions from mempool *)
-            (* TODO: revert back global state until common_block*)
-            (* TODO: apply incoming blocks to state *)
+            let all_incoming_transactions = List.flatten (List.map (fun block -> block.transactions) new_blocks) in
+            let* transaction_pool = Lwt_mvar.take node.transaction_pool in
+            let updated_tx_pool = List.filter (fun (mem_tx, _) -> 
+                not (List.exists (fun block_tx -> block_tx.Transaction.hash = mem_tx.Transaction.hash) 
+                all_incoming_transactions)
+              )
+              transaction_pool in
+            let* _ = Lwt_mvar.put node.transaction_pool updated_tx_pool in
+
+            let* curr_state = Lwt_mvar.take node.global_state in
+            let reverted_state = State.revert_to_hash curr_state common_block.state_root in
+            let updated_trie = List.fold_left (fun state block ->
+              Account.apply_block_transactions state block.transactions
+            ) reverted_state.trie new_blocks in
+            let updated_state = {reverted_state with trie=updated_trie} in
+            State.flush_to_db updated_state;
+            let* _ = Lwt_mvar.put node.global_state updated_state in
+            
             print_endline "All new blocks are valid. Updating local chain.";
 
             Lwt.return_true
@@ -220,7 +236,6 @@ let handle_block_proposal_request node peer_addr body =
     end
   else if Block.validate_block received_block prev_block then 
     try
-      (* TODO: apply incoming block to state *)
       print_endline "appending received block";
 
       let* transaction_pool = Lwt_mvar.take node.transaction_pool in
@@ -229,6 +244,16 @@ let handle_block_proposal_request node peer_addr body =
         received_block.transactions)
       ) transaction_pool in
       let* _ = Lwt_mvar.put node.transaction_pool updated_transaction_pool in
+
+      (* TODO: update state and flush to db *)
+      let* curr_state = Lwt_mvar.take node.global_state in
+      let updated_trie = Account.apply_block_transactions
+        curr_state.trie
+        received_block.transactions
+      in  
+      let updated_state = { curr_state with trie=updated_trie } in
+      let _ = State.flush_to_db updated_state in
+      let* _ = Lwt_mvar.put node.global_state updated_state in
 
       let new_chain = received_block :: curr_chain in
       let* _ = Lwt_mvar.take node.blockchain in
@@ -261,30 +286,9 @@ let mine_block curr_state transactions (prev_block: Block.t) difficulty miner_ad
     signature = "";
   } in
 
-  (* TODO: this go to state.ml *)
-  (* TODO: each transaction should generate a log with topics *)
-  let rec apply_transactions state transactions = 
-    (match transactions with
-    | [] -> state
-    | tx :: rest ->
-        (match Account.apply_transaction state tx with
-        | Ok new_state -> 
-            Printf.printf "Transaction executed ok!\n"; 
-            apply_transactions new_state rest
-        | Error err -> 
-            Printf.printf "Transaction execution error: %s\n" err;
-            apply_transactions state rest))
-  in
-
-  (* TODO: this go to state.ml *)
-  let updated_state = 
-    (match Account.apply_transaction_coinbase curr_state coinbase_tx with
-    | Ok new_state ->
-        print_endline "Coinbase transaction executed!\n";
-        apply_transactions new_state transactions
-    | _ -> 
-        print_endline "Coinbase transaction error";
-        apply_transactions curr_state transactions) 
+  let updated_state = Account.apply_block_transactions 
+    curr_state
+    (coinbase_tx :: transactions)
   in
   let state_root = MKPTrie.hash updated_state in
 
@@ -508,7 +512,7 @@ let http_server node =
         | Some [account_addr] -> 
             let* state = Lwt_mvar.take node.global_state in 
             let* _ = Lwt_mvar.put node.global_state state in
-            (match State.get state account_addr with
+            (match State.trie_get state account_addr with
             | None -> 
                 Server.respond_string 
                   ~headers:cors_headers 

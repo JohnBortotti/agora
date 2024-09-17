@@ -361,8 +361,6 @@ module Account = struct
       ("code_hash", `String account.code_hash);
     ]
 
-
-
   let encode account =
    `List [
       `String account.address;
@@ -425,6 +423,20 @@ module Account = struct
           |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
         Ok (new_state)
 
+  (* TODO: each transaction should generate a log with topics,
+   this is where we use the Error of apply_transaction *)
+  let rec apply_transactions state transactions = 
+    match transactions with
+    | tx :: rest ->
+        (match apply_transaction state tx with
+        | Ok new_state -> 
+            Printf.printf "Transaction executed ok!\n"; 
+            apply_transactions new_state rest
+        | Error err -> 
+            Printf.printf "Transaction execution error: %s\n" err;
+            apply_transactions state rest)
+    | _ -> state
+
   let apply_transaction_coinbase state tx =
     match get_account state tx.receiver with
     | None ->
@@ -445,6 +457,25 @@ module Account = struct
         MKPTrie.insert state receiver_account.address (encode updated_receiver_account) in
       Ok(new_state)
 
+  let apply_block_transactions state transactions: MKPTrie.trie =
+    match transactions with
+    | coinbase :: [] -> 
+      (match apply_transaction_coinbase state coinbase with
+        | Ok (new_state) ->
+            print_endline "Coinbase transaction executed!\n";
+            new_state
+        | _ -> 
+            print_endline "Coinbase transaction error";
+            apply_transactions state transactions)
+    | coinbase :: transactions ->
+      (match apply_transaction_coinbase state coinbase with
+        | Ok (new_state) ->
+            print_endline "Coinbase transaction executed!\n";
+            apply_transactions new_state transactions
+        | _ -> 
+            print_endline "Coinbase transaction error";
+            apply_transactions state transactions)
+    | _ -> state
 end
 
 module State = struct
@@ -453,15 +484,10 @@ module State = struct
     db: Database.t;
   }
 
-  let init_state db_path mem_size =
-    let db = Database.create db_path mem_size in
-    let trie = None in
-    {trie; db}
-
-  let get state key =
+  let trie_get state key =
     MKPTrie.lookup state.trie key
 
-  let set state key value =
+  let trie_set state key value =
     let new_trie = MKPTrie.insert state.trie key value in
     { state with trie = new_trie }
 
@@ -477,6 +503,29 @@ module State = struct
       let key_hex = hex_of_bytes key_bytes in
       let value_hex = hex_of_bytes value_bytes in
 
-      Database.database_write state.db key_hex value_hex
-    ) state.trie;
+      Database.write state.db key_hex value_hex
+    ) state.trie
+
+  let revert_to_hash state hash = 
+    if hash <> "0" then
+      begin
+        let hex_key = Bytes.of_string hash |> hex_of_bytes in
+        match Database.get state.db hex_key with
+        | None ->
+            print_endline ("State with hash " ^ hash ^ " not found in the database.");
+            state
+        | Some root_value ->
+            print_endline ("State with hash " ^ hash ^ " was found in the database.");
+            print_endline root_value;
+            (* TODO: revert *)
+            state
+      end
+    else
+      (print_endline "reverting state to genesis block";
+      { state with trie=None })
+ 
+  let init_state db_path mem_size =
+    let db = Database.create db_path mem_size in
+    let trie = None in
+    {trie;db}
 end
