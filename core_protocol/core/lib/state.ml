@@ -164,7 +164,7 @@ module MKPTrie = struct
     | (x :: xs, y :: ys) when x = y -> 1 + common_prefix_length xs ys
     | _ -> 0
 
-  let rec take (n : int) (lst : int list) : int list =
+  let rec take n lst =
     match n, lst with
     | 0, _ | _, [] -> []
     | n, x :: xs -> x :: take (n - 1) xs
@@ -303,29 +303,40 @@ module MKPTrie = struct
         to_hex (digest_string rlp_encoded)
     | None -> ""
 
-  let serialize_node = function
-  | Leaf (nibbles, value) -> 
-      RLP.encode_list [RLP.encode_string (nibbles_to_string nibbles); RLP.encode_string value]
-  | Extension (nibbles, child) -> 
-      let child_hash = hash (Some child) in
-      RLP.encode_list [RLP.encode_string (nibbles_to_string nibbles); RLP.encode_string child_hash]
-  | Branch (children, value_opt) -> 
-      let children_rlp = Array.map (function
+  let serialize = function
+    | Leaf (nibbles, value) ->
+        RLP.encode_list [
+          RLP.encode_string "leaf";
+          RLP.encode_string (nibbles_to_string nibbles);
+          RLP.encode_string value
+        ]
+    | Extension (nibbles, child) ->
+        let child_hash = hash (Some child) in
+        RLP.encode_list [
+          RLP.encode_string "extension";
+          RLP.encode_string (nibbles_to_string nibbles);
+          RLP.encode_string child_hash
+        ]
+    | Branch (children, value_opt) ->
+        let children_rlp = Array.map (function
+            | None -> RLP.encode_string ""
+            | Some child -> RLP.encode_string (hash (Some child))
+          ) children
+        in
+        let value_rlp = match value_opt with
+          | Some value -> RLP.encode_string value
           | None -> RLP.encode_string ""
-          | Some child -> RLP.encode_string (hash (Some child))
-        ) children
-      in
-      let value_rlp = match value_opt with
-        | Some value -> RLP.encode_string value
-        | None -> RLP.encode_string ""
-      in
-      RLP.encode_list (Array.to_list children_rlp @ [value_rlp])
+        in
+        RLP.encode_list (
+          RLP.encode_string "branch" ::
+          (Array.to_list children_rlp @ [value_rlp])
+        )
 
   let rec hash_iter f = function
   | None -> ()
   | Some node -> (
       let node_hash = hash (Some node) in
-      let serialized_node = serialize_node node in
+      let serialized_node = serialize node in
       f node_hash serialized_node;
       match node with
       | Leaf _ -> ()
@@ -507,18 +518,59 @@ module State = struct
     ) state.trie
 
   let revert_to_hash state hash = 
+    let rec rebuild_trie state rlp = 
+    let open MKPTrie in
+    match rlp with
+    | `List (`String "leaf" :: `String nibbles_str :: `String value_str :: []) ->
+        let nibbles = string_to_nibbles nibbles_str in
+        Some (Leaf (nibbles, value_str))
+    | `List (`String "extension" :: `String nibbles_str :: `String child_hash :: []) ->
+        let nibbles = string_to_nibbles nibbles_str in
+        let child_hex_key = Bytes.of_string child_hash |> hex_of_bytes in
+        let serialized_child_node = (match Database.get state.db child_hex_key with
+          | Some value -> RLP.decode value 
+          | None -> failwith "Child node not found in database")
+        in
+        (match rebuild_trie state serialized_child_node with
+        | Some child -> Some (Extension (nibbles, child))
+        | None -> None)
+    | `List (`String "branch" :: child_rlp_list) ->
+        let children_rlp = take 16 child_rlp_list in
+        let children = Array.of_list (List.map (function
+          | `String "" -> None
+          | `String child_hash -> 
+              let child_hex_key = Bytes.of_string child_hash |> hex_of_bytes in
+              (match Database.get state.db child_hex_key with
+              | Some serialized_child_node -> rebuild_trie state (RLP.decode serialized_child_node)
+              | None -> None)
+          | _ -> failwith "Invalid RLP structure for branch node"
+        ) children_rlp)
+        in
+        let value_opt = match List.nth child_rlp_list 16 with
+          | `String "" -> None
+          | `String value_str -> Some value_str
+          | _ -> failwith "Invalid RLP structure for branch node"
+        in
+        Some (Branch (children, value_opt))
+    | _ -> print_endline "Invalid RLP structure"; None
+    in
+    let rebuild_trie_from_root key =
+      let hex_key = Bytes.of_string key |> hex_of_bytes in
+      match Database.get state.db hex_key with
+      | None -> 
+          print_endline ("Node with key " ^ hex_key ^ " not found in the database."); 
+          state
+      | Some serialized_node ->
+          let trie = rebuild_trie state (RLP.decode serialized_node) in
+
+          print_endline (MKPTrie.string_of_node trie 0);
+          { state with trie=trie }
+    in
     if hash <> "0" then
       begin
-        let hex_key = Bytes.of_string hash |> hex_of_bytes in
-        match Database.get state.db hex_key with
-        | None ->
-            print_endline ("State with hash " ^ hash ^ " not found in the database.");
-            state
-        | Some root_value ->
-            print_endline ("State with hash " ^ hash ^ " was found in the database.");
-            print_endline root_value;
-            (* TODO: revert *)
-            state
+        print_endline ("Reverting to state with hash " ^ hash);
+        let restored_state = rebuild_trie_from_root hash in
+        restored_state
       end
     else
       (print_endline "reverting state to genesis block";

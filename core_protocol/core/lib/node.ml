@@ -19,7 +19,8 @@ node implementation:
     - [x] add miner fee after block inclusion
     - [x] apply coinbase transaction on state
     - [x] front-end account explorer
-    - [ ] reverse transactions if network choose another block
+    - [ ] front-ent account consensus
+    - [x] reverse transactions if network choose another block
     - [ ] re-broadcast incoming blocks
     - [ ] contract storage
   - fixes
@@ -208,7 +209,6 @@ let handle_block_proposal_request node peer_addr body =
             let* _ = Lwt_mvar.put node.known_peers peers_list in
             let* _ = broadcast_block peers_list received_block in
 
-            (* TODO: remove transactions from mempool *)
             let all_incoming_transactions = List.flatten (List.map (fun block -> block.transactions) new_blocks) in
             let* transaction_pool = Lwt_mvar.take node.transaction_pool in
             let updated_tx_pool = List.filter (fun (mem_tx, _) -> 
@@ -245,7 +245,6 @@ let handle_block_proposal_request node peer_addr body =
       ) transaction_pool in
       let* _ = Lwt_mvar.put node.transaction_pool updated_transaction_pool in
 
-      (* TODO: update state and flush to db *)
       let* curr_state = Lwt_mvar.take node.global_state in
       let updated_trie = Account.apply_block_transactions
         curr_state.trie

@@ -25,6 +25,7 @@ module MKPTrie : sig
   val insert: trie -> string -> RLP.t -> trie
   val lookup: trie -> string -> node option
   val hash: trie -> string
+  val serialize: node -> string
 end
 
 module Account : sig
@@ -44,7 +45,6 @@ module Account : sig
   val apply_transactions: MKPTrie.trie -> Transaction.t list -> MKPTrie.trie
   val apply_transaction_coinbase: MKPTrie.trie -> Transaction.t -> (MKPTrie.trie, string) result
   val apply_block_transactions: MKPTrie.trie -> Transaction.t list -> MKPTrie.trie
-
 end
 
 module State : sig
@@ -58,5 +58,4 @@ module State : sig
   val trie_set: t -> string -> RLP.t -> t
   val flush_to_db: t -> unit
   val revert_to_hash: t -> string -> t
-
 end
