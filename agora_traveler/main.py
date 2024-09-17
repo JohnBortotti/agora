@@ -8,9 +8,12 @@ def home():
   node = request.args.get('node', default="http://node1:8080")
   start_query = request.args.get('start', default="0")
   end_query = request.args.get('end', default="20")
-
-  r = requests.get(f'{node}/blocks?start={start_query}&end={end_query}')
-  blocks = r.json()
+  blocks = []
+  try:
+    r = requests.get(f'{node}/blocks?start={start_query}&end={end_query}')
+    blocks = r.json()
+  except:
+    blocks = []
 
   return render_template(
     'index.html',
@@ -27,8 +30,13 @@ def compare():
 
     chains = []
     for node in nodes:
-        r = requests.get(f'{node}/blocks?start={start_query}&end={end_query}')
-        blocks = r.json()
+        blocks = []
+        try:
+          r = requests.get(f'{node}/blocks?start={start_query}&end={end_query}')
+          blocks = r.json()
+        except:
+          blocks = []
+
         chains.append({"node": node, "blocks": blocks})
 
     reference_chain = chains[0]['blocks']
@@ -60,10 +68,9 @@ def compare():
 def account():
   node = request.args.get('node', default="http://node1:8080")
   account_query = request.args.get('account', default="")
-  r = requests.get(f'{node}/account?account={account_query}')
   account = None
-  
   try:
+    r = requests.get(f'{node}/account?account={account_query}')
     account = r.json()
   except:
     account = None
