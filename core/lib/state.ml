@@ -352,6 +352,17 @@ module Account = struct
       account.storage_root
       account.code_hash
 
+  let account_to_json account =
+    `Assoc [
+      ("address", `String account.address);
+      ("balance", `Int account.balance);
+      ("nonce", `Int account.nonce);
+      ("storage_root", `String account.storage_root);
+      ("code_hash", `String account.code_hash);
+    ]
+
+
+
   let encode account =
    `List [
       `String account.address;

@@ -13,5 +13,5 @@ services:
 networks:
   agora_network:
     external: 
-      name: core_agora_network
+      name: agora_agora_network
 

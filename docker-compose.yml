@@ -1,15 +1,15 @@
 services:
   node1:
     build: .
-    container_name: aagora_node_1
+    container_name: agora_node_1
     image: ocaml-project
     environment:
       - NODE_ADDR=http://node1:8080
       - MINER_ADDR=1
       - KNOWN_PEERS=http://node3:8080
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
-    volumes:
-      - ./core/:/home/opam/app
+    # volumes:
+    #   - ./core/:/home/opam/app
     working_dir: /home/opam/app
     ports: 
       - "8081:8080"
@@ -18,7 +18,7 @@ services:
 
   node2:
     build: .
-    container_name: aagora_node_2
+    container_name: agora_node_2
     image: ocaml-project
     environment:
       - NODE_ADDR=http://node2:8080
@@ -33,7 +33,7 @@ services:
 
   node3:
     build: .
-    container_name: aagora_node_3
+    container_name: agora_node_3
     image: ocaml-project
     environment:
       - NODE_ADDR=http://node3:8080

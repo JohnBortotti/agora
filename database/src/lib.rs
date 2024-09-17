@@ -36,9 +36,6 @@ pub extern "C" fn database_write(db: *mut engine::Database, key: *const c_char, 
     }
   };
 
-  println!("Key as bytes: {:?}", key);
-  println!("Value as bytes: {:?}", value);
-
   db.write(
     key,
     value

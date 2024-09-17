@@ -5,7 +5,6 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-
   node = request.args.get('node', default="http://node1:8080")
   start_query = request.args.get('start', default="0")
   end_query = request.args.get('end', default="20")
@@ -56,6 +55,24 @@ def compare():
         reference_chain=reference_chain,
         validation_results=validation_results
     )
+
+@app.route('/account')
+def account():
+  node = request.args.get('node', default="http://node1:8080")
+  account_query = request.args.get('account', default="")
+  r = requests.get(f'{node}/account?account={account_query}')
+  account = None
+  
+  try:
+    account = r.json()
+  except:
+    account = None
+
+  return render_template(
+    'account.html',
+    title='Account explorer',
+    account=account
+  )
 
 if __name__ == '__main__':
   app.run(host='0.0.0.0', port=5000)

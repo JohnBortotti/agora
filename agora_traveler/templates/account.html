@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+      .link {
+	color: blue;
+	text-decoration: underline;
+	cursor: pointer;
+      }
+
+      .mleft {
+	margin-left: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    {% include 'navbar.html' %}
+
+    <h1>{{ title }}</h1>
+
+    <div>
+      <form method="GET" action="/account">
+	<label for="node">Node:</label>
+	<input type="text" id="node" name="node" value="{{ request.args.get('node', 'http://node1:8080') }}" required><br><br>
+
+	<label for="account">Account address:</label>
+	<input type="text" id="account" name="account" value="{{ request.args.get('account', '0') }}" required><br><br>
+
+	<input type="submit" value="Submit">
+      </form>
+    </div>
+    <br>
+
+    <p>{{ account }}</p>
+
+  </body>
+</html>
+

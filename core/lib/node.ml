@@ -17,8 +17,9 @@ node implementation:
   - [ ] state 
     - [x] account global state (balance, nonce, storageRoot, codeHash)
     - [x] add miner fee after block inclusion
-    - [ ] reverse transactions if network choose another block
     - [x] apply coinbase transaction on state
+    - [x] front-end account explorer
+    - [ ] reverse transactions if network choose another block
     - [ ] re-broadcast incoming blocks
     - [ ] contract storage
   - fixes
@@ -464,8 +465,6 @@ let http_server node =
 
         Server.respond_string ~headers:cors_headers ~status:`OK ~body:json_body ()
     | (`GET, "/headers") ->
-        Printf.printf "\n\nRECEBENDO REQUEST HEADERS\n\n";
-
         let uri = req |> Request.uri in
         let query = Uri.query uri in
 
@@ -500,6 +499,40 @@ let http_server node =
         let json_body = `List headers_json_list |> Yojson.Basic.to_string in
 
         Server.respond_string ~headers:cors_headers ~status:`OK ~body:json_body ()
+    | (`GET, "/account") ->
+        let uri = req |> Request.uri in
+        let query = Uri.query uri in
+        let account = List.assoc_opt "account" query in
+
+        (match account with
+        | Some [account_addr] -> 
+            let* state = Lwt_mvar.take node.global_state in 
+            let* _ = Lwt_mvar.put node.global_state state in
+            (match State.get state account_addr with
+            | None -> 
+                Server.respond_string 
+                  ~headers:cors_headers 
+                  ~status:`Not_found 
+                  ~body:"Account not found" ()
+            | Some node ->
+                (match node with
+                  | Leaf (_, acc_data) 
+                  | Branch (_, Some(acc_data)) ->
+                    let decoded_acc = Account.decode (RLP.decode acc_data) in
+                    let acc_json = Account.account_to_json decoded_acc in
+                    let json_body = Yojson.Basic.to_string acc_json in
+                    Server.respond_string ~status:`OK ~body:json_body ()
+                  | _ ->
+                      Server.respond_string 
+                      ~headers:cors_headers 
+                      ~status:`Not_found 
+                      ~body:"Account not found" ())
+            )
+        | _ -> 
+          Server.respond_string 
+            ~headers:cors_headers 
+            ~status:`Bad_request 
+            ~body:"Empty account address" ())
     | _ ->
         Server.respond_string ~status:`Not_found ~body:"Not found" ()
   in

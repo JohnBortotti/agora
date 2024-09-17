@@ -37,6 +37,7 @@ module Account : sig
   }
 
   val string_of_account: t -> string
+  val account_to_json: t -> Yojson.Basic.t
   val encode: t -> RLP.t
   val decode: RLP.t -> t
   val apply_transaction: MKPTrie.trie -> Transaction.t -> (MKPTrie.trie, string) result
