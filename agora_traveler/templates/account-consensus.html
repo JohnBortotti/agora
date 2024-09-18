@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+      .link {
+        color: blue;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+
+      .mleft {
+        margin-left: 20px;
+      }
+
+      .valid {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        padding: 10px;
+        border-radius: 5px;
+      }
+
+      .invalid {
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        padding: 10px;
+        border-radius: 5px;
+      }
+
+      .peer-diff {
+        background-color: #ffeeba;
+        padding: 10px;
+        margin-top: 10px;
+        border-radius: 3px;
+      }
+
+      .block-container {
+        margin: 15px 0;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+
+    </style>
+  </head>
+  <body>
+    {% include 'navbar.html' %}
+
+    <h1>{{ title }}</h1>
+
+    <div>
+      <form method="GET" action="/account-consensus">
+        <label for="start">Account:</label>
+        <input type="text" id="account" name="account" value="{{ request.args.get('account', '') }}" required><br><br>
+        <input type="submit" value="Submit">
+      </form>
+    </div>
+    <br>
+
+    <!-- Display the Account Information -->
+    <div class="block-container valid">
+      <h3>Account Details</h3>
+      <p><strong>Account Address:</strong> {{ reference_account['address'] }}</p>
+      <p><strong>Balance:</strong> {{ reference_account['balance'] }}</p>
+      <p><strong>Nonce:</strong> {{ reference_account['nonce'] }}</p>
+      <p><strong>Storage Root:</strong> {{ reference_account['storageRoot'] }}</p>
+      <p><strong>Code Hash:</strong> {{ reference_account['codeHash'] }}</p>
+    </div>
+
+    <!-- Display validation results from all nodes -->
+    <h3>Node Validation Results:</h3>
+    {% for result in validation_results %}
+      <div class="block-container {% if result.status == 'valid' %}valid{% else %}invalid{% endif %}">
+        <details>
+          <summary>
+            <span class="link">Node: {{ result.node }} - 
+              {% if result.status == 'valid' %}
+                Account state is valid
+              {% else %}
+                Account state differs
+              {% endif %}
+            </span>
+          </summary>
+          <div class="mleft">
+            <p>{{ result.details }}</p>
+            {% if result.status == 'mismatch' %}
+              <h4>Account State on this Node:</h4>
+              <p><strong>Account Address:</strong> {{ result.account['address'] }}</p>
+              <p><strong>Balance:</strong> {{ result.account['balance'] }}</p>
+              <p><strong>Nonce:</strong> {{ result.account['nonce'] }}</p>
+              <p><strong>Storage Root:</strong> {{ result.account['storageRoot'] }}</p>
+              <p><strong>Code Hash:</strong> {{ result.account['codeHash'] }}</p>
+            {% endif %}
+          </div>
+        </details>
+      </div>
+    {% endfor %}
+  </body>
+</html>
+

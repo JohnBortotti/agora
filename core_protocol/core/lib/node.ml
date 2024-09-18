@@ -1,5 +1,5 @@
 (*
-node implementation:
+TODO:
   - [x] main loop
     - [x] handle incoming transactions
     - [x] list transaction_pool
@@ -19,8 +19,9 @@ node implementation:
     - [x] add miner fee after block inclusion
     - [x] apply coinbase transaction on state
     - [x] front-end account explorer
-    - [ ] front-ent account consensus
+    - [x] front-ent account consensus
     - [x] reverse transactions if network choose another block
+    - [ ] tool to generate transactions (wallet)
     - [ ] re-broadcast incoming blocks
     - [ ] contract storage
   - fixes
@@ -82,7 +83,6 @@ let handle_transaction_request (node: node) (body: string) =
   add_transaction node.transaction_pool tx
 
 let broadcast_block peers_list block =
-  (* TODO: get from node.address *)
   let peer_addr = Sys.getenv "NODE_ADDR" in
 
   let block_json = Block.block_to_json block |> Yojson.Basic.to_string in

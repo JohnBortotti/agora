@@ -137,7 +137,6 @@ let validate_transaction tx =
           false
     end
 
-(* TODO: validate coinbase tx signature? *)
 let validate_transaction_coinbase tx =
   if tx.hash <> "" then
     false

@@ -22,7 +22,7 @@ def home():
   )
 
 @app.route('/consensus')
-def compare():
+def consensus():
     nodes = ["http://node1:8080", "http://node2:8080", "http://node3:8080"]
 
     start_query = request.args.get('start', default="0")
@@ -71,15 +71,69 @@ def account():
   account = None
   try:
     r = requests.get(f'{node}/account?account={account_query}')
-    account = r.json()
+    if r.status_code == 200:
+      account = r.json()
+    else:
+      account = {"error": f"Error fetching from {node}"}
   except:
-    account = None
+      account = {"error": f"Error fetching from {node}"}
 
   return render_template(
     'account.html',
     title='Account explorer',
     account=account
   )
+
+@app.route('/account-consensus')
+def account_consensus():
+    nodes = ["http://node1:8080", "http://node2:8080", "http://node3:8080"]
+    account_query = request.args.get('account', default="")
+    accounts = []
+
+    for node in nodes:
+        account = {}
+        try:
+            r = requests.get(f'{node}/account?account={account_query}')
+            if r.status_code == 404:
+                account = {"error": f"Account not found on {node} (404)"}
+            else:
+                account = r.json()
+        except requests.exceptions.RequestException as e:
+            account = {"error": f"Node {node} unreachable: {str(e)}"}
+
+        accounts.append(account)
+
+    reference_account = accounts[0]
+    validation_results = []
+
+    for idx, account in enumerate(accounts):
+        if "error" in account:
+            validation_results.append({
+                "node": nodes[idx],
+                "status": "error",
+                "details": account["error"]
+            })
+        elif account == reference_account:
+            validation_results.append({
+                "node": nodes[idx],
+                "status": "valid",
+                "account": account,
+                "details": "Account state matches"
+            })
+        else:
+            validation_results.append({
+                "node": nodes[idx],
+                "status": "mismatch",
+                "account": account,
+                "details": "Account state differs"
+            })
+
+    return render_template(
+        'account-consensus.html',
+        title='Account consensus',
+        reference_account=reference_account,
+        validation_results=validation_results
+    )
 
 if __name__ == '__main__':
   app.run(host='0.0.0.0', port=5000)
