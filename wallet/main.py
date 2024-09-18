@@ -65,11 +65,6 @@ def send_transaction():
   node_address = data.get('node_address')
   transaction = data.get('transaction')
 
-  print("\n\n")
-  print(node_address)
-  print("\n\n")
-  print(transaction)
-
   if not node_address or not transaction:
     return jsonify({"status": "error", "message": "Missing node address or transaction data."}), 400
 
@@ -85,12 +80,27 @@ def send_transaction():
   except requests.exceptions.RequestException as e:
     return jsonify({"status": "error", "message": f"Error sending transaction: {str(e)}"}), 500
 
-
 @app.route('/')
 def home():
   return render_template(
     'index.html',
     title="Agora wallet"
+  )
+
+@app.route('/keys')
+def keys():
+
+  private_key = PrivateKey()
+  public_key = private_key.public_key
+
+  private_key_hex = private_key.to_hex()
+  public_key_hex = public_key.format(compressed=False).hex()
+
+  return render_template(
+    'keys.html',
+    title="New Key pair",
+    private_key=private_key_hex,
+    public_key=public_key_hex
   )
 
 if __name__ == '__main__':

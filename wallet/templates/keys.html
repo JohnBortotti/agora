@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keypair Generator</title>
+</head>
+<body>
+    {% include 'navbar.html' %}
+
+    <h1>{{ title }}</h1>
+
+    <form action="/keys" method="GET">
+        <button class="generate-button" type="submit">Generate Keypair</button>
+    </form>
+
+    {% if private_key and public_key %}
+    <div class="key-container">
+        <p><span>Private Key:</span> {{ private_key }}</p>
+        <p><span>Public Key:</span> {{ public_key }}</p>
+    </div>
+    {% endif %}
+
+</body>
+</html>
