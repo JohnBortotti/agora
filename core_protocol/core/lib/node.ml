@@ -21,9 +21,10 @@ TODO:
     - [x] front-end account explorer
     - [x] front-ent account consensus
     - [x] reverse transactions if network choose another block
-    - [ ] tool to generate transactions (wallet)
+    - [x] tool to generate transactions (wallet)
     - [ ] re-broadcast incoming blocks
     - [ ] contract storage
+    - [ ] consensus -> "most work chain"
   - fixes
     - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
     - [ ] optimize block broadcasting (a lot of repeated requests)
@@ -45,7 +46,6 @@ open State
 open Lwt
 open Lwt.Syntax
 open Cohttp_lwt_unix
-(* open Database *)
 
 type node = {
   address: string;
