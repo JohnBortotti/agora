@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transaction Generator</title>
+    <style>
+        .transaction-output { padding: 10px; margin-top: 10px; border: 1px solid #ccc; border-radius: 5px; }
+        .transaction-output pre { word-wrap: break-word; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    {% include 'navbar.html' %}
+
+    <h1>{{ title }}</h1>
+
+    <form id="transaction-form">
+        <label for="receiver">Receiver Address:</label>
+        <input type="text" id="receiver" name="receiver" required>
+	<br><br>
+
+        <label for="amount">Amount:</label>
+        <input type="number" id="amount" name="amount" required>
+	<br><br>
+
+        <label for="gas-limit">Gas Limit:</label>
+        <input type="number" id="gas-limit" name="gas_limit" required value="21000">
+	<br><br>
+
+        <label for="gas-price">Gas Price:</label>
+        <input type="number" id="gas-price" name="gas_price" required value="50">
+	<br><br>
+
+        <label for="nonce">Nonce:</label>
+        <input type="number" id="nonce" name="nonce" required>
+	<br><br>
+
+        <label for="payload">Payload:</label>
+        <textarea id="payload" name="payload" rows="3" required>transaction_payload</textarea>
+	<br><br>
+
+        <label for="private-key">Private Key (hex):</label>
+        <input type="text" id="private-key" name="private_key" required>
+	<br><br>
+
+        <button type="submit">Generate Transaction</button>
+    </form>
+
+    <div id="transaction-output" class="transaction-output" style="display:none;">
+        <p><strong>Signed Transaction (JSON):</strong></p>
+        <pre id="signed-transaction"></pre>
+        
+        <label for="node-address">Node Address:</label>
+	<input type="text" id="node-address" name="node" value="{{ request.args.get('node', 'http://node1:8080') }}" required><br><br>
+        <button id="send-transaction" disabled>Send Transaction</button>
+    </div>
+</div>
+
+<script>
+    document.getElementById('transaction-form').addEventListener('submit', async function (e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const response = await fetch('/generate-transaction', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+        document.getElementById('signed-transaction').textContent = JSON.stringify(data, null, 2);
+        document.getElementById('transaction-output').style.display = 'block';
+        document.getElementById('send-transaction').disabled = false;
+
+        document.getElementById('send-transaction').addEventListener('click', async function () {
+            const nodeAddress = document.getElementById('node-address').value;
+	    const sendResponse = await fetch('/send-transaction', {
+	      method: 'POST',
+	      headers: {
+		'Content-Type': 'application/json',
+	      },
+	      body: JSON.stringify({ node_address: nodeAddress, transaction: data }),
+	    });
+
+	    const result = await sendResponse.json();
+	    alert(`Transaction sent! Response: ${JSON.stringify(result)}`);
+        });
+    });
+</script>
+
+</body>
+</html>
+
