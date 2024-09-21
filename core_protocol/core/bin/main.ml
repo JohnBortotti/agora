@@ -2,8 +2,13 @@
 TODO:
   - [x] node
   - [x] consensus (forks and conflicts)
-  - [ ] vm and contracts
+  - [ ] vm, fees and contracts (deploy, state and execution)
   - [x] configs via .env
+  - tests
+    - [x] pow
+    - [x] transaction
+    - [ ] block
+    - [ ] state (RLP, MKPTrie, Account)
  *)
 
 open Agora_core

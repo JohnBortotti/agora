@@ -23,8 +23,7 @@ TODO:
     - [x] reverse transactions if network choose another block
     - [x] tool to generate transactions (wallet)
     - [x] re-broadcast incoming blocks
-    - [ ] contract storage
-    - [ ] consensus -> "most work chain"
+    - [ ] consensus -> choose "most work chain"
   - fixes
     - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
     - [ ] optimize block broadcasting (a lot of repeated requests)
