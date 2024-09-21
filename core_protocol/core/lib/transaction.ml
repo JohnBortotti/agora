@@ -166,10 +166,6 @@ let string_of_transaction tx =
   "payload: " ^ tx.payload ^ "\n" ^
   "signature: " ^ tx.signature
 
-let string_of_transaction_compact tx =
-  tx.sender ^ tx.receiver ^ string_of_int tx.amount ^ string_of_int tx.gas_limit ^ 
-  string_of_int tx.gas_price ^ string_of_int tx.nonce ^ tx.payload ^ tx.signature
-
 let transaction_to_json tx =
   `Assoc [
     ("hash", `String tx.hash);
@@ -182,9 +178,6 @@ let transaction_to_json tx =
     ("payload", `String tx.payload);
     ("signature", `String tx.signature)
   ]
-
-let transaction_to_json_string tx = 
-  transaction_to_json tx |> Yojson.Basic.to_string
 
 let transaction_of_json json: t =
   let open Yojson.Basic.Util in

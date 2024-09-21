@@ -31,7 +31,10 @@ let block_to_header (block: t) = {
 }
 
 let string_of_block block =
-  let txs = List.map Transaction.transaction_to_json_string block.transactions |> String.concat ",\n " in
+  let transaction_to_json_string tx =
+    Transaction.transaction_to_json tx |> Yojson.Basic.to_string
+  in
+  let txs = List.map transaction_to_json_string block.transactions |> String.concat ",\n " in
   Printf.sprintf "Block {\n  index: %d;\n  previous_hash: %s;\n  timestamp: %f;
   transactions: [\n  %s\n  ];\n miner: %s;\n state_root: %s;\n nonce: %d;\n difficulty: %d;\n hash: %s\n}"
   block.index
@@ -113,8 +116,14 @@ let block_headers_of_json json =
   json |> Yojson.Basic.Util.to_list |> List.map block_header_of_json
 
 let hash_block block =
+  let open Transaction in
+  let string_of_transaction_compact tx =
+    tx.sender ^ tx.receiver ^ string_of_int tx.amount ^ string_of_int tx.gas_limit ^ 
+    string_of_int tx.gas_price ^ string_of_int tx.nonce ^ tx.payload ^ tx.signature
+  in
+
   let transactions_str = String.concat "" (List.map (fun tx ->
-    Transaction.string_of_transaction_compact tx
+    string_of_transaction_compact tx
   ) block.transactions) in
   let data = 
     Printf.sprintf "%d%s%f%s%s%s%d%d"

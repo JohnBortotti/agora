@@ -14,7 +14,5 @@ val hash_transaction: t -> string
 val validate_transaction: t -> bool
 val validate_transaction_coinbase: t -> bool
 val string_of_transaction: t -> string
-val string_of_transaction_compact: t -> string
 val transaction_to_json: t -> Yojson.Basic.t
-val transaction_to_json_string: t -> string
 val transaction_of_json: Yojson.Basic.t -> t

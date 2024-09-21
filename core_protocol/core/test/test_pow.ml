@@ -51,7 +51,7 @@ let test_proof_of_work () =
 
 let () =
   let open Alcotest in
-  run "Pow tests" [
+  run "Pow module tests" [
     "Hex_to_bin", [
       test_case "Test hex_to_bin function" `Quick test_hex_to_bin;
     ];
