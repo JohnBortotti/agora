@@ -168,23 +168,17 @@ let validate_block block prev_block =
   let expected_hash = hash_block block in
   let difficulty = calculate_difficulty prev_block in
   if block.hash <> expected_hash then 
-    (print_endline "invalid block hash\n";
-    false)
+    false
   else if block.previous_hash <> prev_block.hash then
-    (print_endline "invalid previous_hash hash\n";
-    false)
+    false
   else if not (is_valid_pow block.hash difficulty) then
-    (print_endline "invalid pow\n";
-    false)
+    false
   else if block.index <> prev_block.index + 1 then
-    (print_endline "invalid block index\n";
-    false)
+    false
   else
     begin
-      print_endline "validating block transactions";
       if validate_block_transactions block then
-        (print_endline "block is valid\n";
-        true)
+        true
       else
         false
     end

@@ -1,10 +1,8 @@
 (*
 TODO:
   - [x] node
-  - [ ] jsonrpc
   - [x] consensus (forks and conflicts)
   - [ ] vm and contracts
-  - [ ] logging
   - [x] configs via .env
  *)
 

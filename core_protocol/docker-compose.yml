@@ -8,6 +8,7 @@ services:
       - MINER_ADDR=1
       - KNOWN_PEERS=http://node3:8080
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
+      - ENTROPY_POOL=1
     # volumes:
     #   - ./core/:/home/opam/app
     working_dir: /home/opam/app
@@ -25,6 +26,7 @@ services:
       - MINER_ADDR=2
       - KNOWN_PEERS=http://node3:8080
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
+      - ENTROPY_POOL=2
     working_dir: /home/opam/app
     ports: 
       - "8082:8080"
@@ -40,6 +42,7 @@ services:
       - MINER_ADDR=3
       - KNOWN_PEERS=http://node1:8080,http://node2:8080
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
+      - ENTROPY_POOL=3
     working_dir: /home/opam/app
     ports: 
       - "8083:8080"

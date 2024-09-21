@@ -22,7 +22,7 @@ TODO:
     - [x] front-ent account consensus
     - [x] reverse transactions if network choose another block
     - [x] tool to generate transactions (wallet)
-    - [ ] re-broadcast incoming blocks
+    - [x] re-broadcast incoming blocks
     - [ ] contract storage
     - [ ] consensus -> "most work chain"
   - fixes
@@ -30,9 +30,8 @@ TODO:
     - [ ] optimize block broadcasting (a lot of repeated requests)
     - [x] validate transaction
     - [ ] singleton Secp256k1 context
-    - [ ] broadcast transactions?
     - [ ] gossip protocol
-    - [ ] paginate /chain endpoint
+    - [x] paginate /chain endpoint
     - [x] add transactions.hash field
 
 notes:
@@ -63,7 +62,6 @@ let add_transaction pool tx =
   Lwt_mvar.put pool updated_pool
   
 let rec validate_transaction_pool node =
-  print_endline "pool validation routine\n";
   let* current_pool = Lwt_mvar.take node.transaction_pool in
   let new_pool = List.filter_map (fun (tx, verified) -> 
     if not verified then 
@@ -94,7 +92,6 @@ let broadcast_block peers_list block =
   let timeout_duration = 5.0 in
 
   let broadcast_to_peer peer =
-    Printf.printf "broadcasting to peer: %s\n" peer;
     let uri = Uri.of_string (peer ^ "/block") in
     let headers = Cohttp.Header.init_with "Content-Type" "application/json" in
 
@@ -108,7 +105,6 @@ let broadcast_block peers_list block =
      
     let timeout =
       let* () = Lwt_unix.sleep timeout_duration in
-      Printf.printf "Timeout while broadcasting to %s\n" peer;
       Lwt.return_unit
     in
 
@@ -129,14 +125,15 @@ let handle_block_proposal_request node peer_addr body =
 
   if received_block.index > prev_block.index+1 then
       begin
-        Printf.printf "receiving longer chain\n";
-        Printf.printf "receiving block index: %d\n" received_block.index;
+        print_endline "receiving longer chain\n";
 
         let block_end = string_of_int (received_block.index) in
-        let block_start = string_of_int (max 0 (prev_block.index - 50)) in
+        let block_start = string_of_int (max 0 (prev_block.index - 2)) in
         let uri = Uri.of_string
           (peer_addr ^ "/headers?start=" ^ block_start ^ "&end=" ^ block_end) 
         in
+
+        Printf.printf "\ngetting headers: %s to %s\n\n" block_end block_start; 
 
         let* _, body = Cohttp_lwt_unix.Client.get uri in
         let* headers_json = Cohttp_lwt.Body.to_string body in
@@ -147,13 +144,11 @@ let handle_block_proposal_request node peer_addr body =
 
         let rec find_last_common_block 
           (chain: Block.t list) (headers: Block.header list) =
-          (* TODO: verify if the common block is out of request interval *)
           match chain, headers with
             | [], _ | _, [] -> None
             | block :: chain_rest, header :: headers_rest ->
               if block.index <> header.index then
                 begin
-                  print_endline "jumping diff index";
                   find_last_common_block (block :: chain_rest) headers_rest
                 end
               else
@@ -166,10 +161,10 @@ let handle_block_proposal_request node peer_addr body =
         let last_common_block = find_last_common_block curr_chain peer_headers in
         match last_common_block with
         | None ->
-          print_endline "No common block found with the peer chain. Rejecting the block.";
+          print_endline "no common block found with the peer chain, rejecting the block.";
           Lwt.return_false
         | Some common_block ->
-          Printf.printf "Common block found index: %d\n" common_block.index;
+          Printf.printf "common block found index: %d\n\n" common_block.index;
 
           let uri = Uri.of_string 
             (peer_addr ^ "/blocks?start=" ^ (string_of_int (common_block.index+1)) ^ "&end=" ^ block_end)
@@ -201,6 +196,9 @@ let handle_block_proposal_request node peer_addr body =
               (fun (block: Block.t) -> block.index <= common_block.index)
               curr_chain
             in
+
+            print_endline "all new blocks are valid. Updating local chain.\n";
+
             let new_chain = List.rev (List.append current_trusted_chain new_blocks) in
             let* _ = Lwt_mvar.take node.blockchain in
             let* _ = Lwt_mvar.put node.blockchain new_chain in
@@ -209,26 +207,35 @@ let handle_block_proposal_request node peer_addr body =
             let* _ = Lwt_mvar.put node.known_peers peers_list in
             let* _ = broadcast_block peers_list received_block in
 
-            let all_incoming_transactions = List.flatten (List.map (fun block -> block.transactions) new_blocks) in
+            let all_incoming_transactions = List.flatten 
+                (List.map (fun block -> block.transactions) 
+                new_blocks) 
+            in
             let* transaction_pool = Lwt_mvar.take node.transaction_pool in
             let updated_tx_pool = List.filter (fun (mem_tx, _) -> 
-                not (List.exists (fun block_tx -> block_tx.Transaction.hash = mem_tx.Transaction.hash) 
+                not (List.exists (fun block_tx -> 
+                  block_tx.Transaction.hash = mem_tx.Transaction.hash) 
                 all_incoming_transactions)
               )
               transaction_pool in
             let* _ = Lwt_mvar.put node.transaction_pool updated_tx_pool in
 
             let* curr_state = Lwt_mvar.take node.global_state in
-            let reverted_state = State.revert_to_hash curr_state common_block.state_root in
-            let updated_trie = List.fold_left (fun state block ->
-              Account.apply_block_transactions state block.transactions
-            ) reverted_state.trie new_blocks in
+            let reverted_state = State.revert_to_hash 
+              curr_state 
+              common_block.state_root 
+            in
+            let updated_trie = List.fold_left (fun state (block: Block.t) ->
+                Account.apply_block_transactions state block.transactions
+              )
+              reverted_state.trie
+              new_blocks 
+            in
+
             let updated_state = {reverted_state with trie=updated_trie} in
             State.flush_to_db updated_state;
             let* _ = Lwt_mvar.put node.global_state updated_state in
             
-            print_endline "All new blocks are valid. Updating local chain.";
-
             Lwt.return_true
           | Error msg ->
             print_endline msg;
@@ -236,7 +243,7 @@ let handle_block_proposal_request node peer_addr body =
     end
   else if Block.validate_block received_block prev_block then 
     try
-      print_endline "appending received block";
+      print_endline "received block is valid\n";
 
       let* transaction_pool = Lwt_mvar.take node.transaction_pool in
       let updated_transaction_pool = List.filter (fun (mem_tx, _) ->
@@ -306,7 +313,7 @@ let mine_block curr_state transactions (prev_block: Block.t) difficulty miner_ad
     } in
     let candidate_hash = hash_block { candidate_block with hash = "" } in 
     if is_valid_pow candidate_hash difficulty then 
-      (Printf.printf "\nmined block!\n\n";
+      (print_endline ("mined block: " ^ (string_of_int candidate_block.index) ^ "\n");
       Lwt.return (updated_state, { candidate_block with hash = candidate_hash }))
     else
       mine (nonce + 1)
@@ -314,21 +321,20 @@ let mine_block curr_state transactions (prev_block: Block.t) difficulty miner_ad
 
 let mining_routine node = 
   let threshold = 0 in
-  let time_delay = float_of_int (Random.int 10) in
+  Random.init (int_of_string(Sys.getenv "ENTROPY_POOL"));
   let rec aux () = 
+    let time_delay = float_of_int ((Random.int 10) + 5) in
     let* mining = Lwt_mvar.take node.mining in
     if mining then
-      (print_endline "mining enabled\n";
-      let* _ = Lwt_mvar.put node.mining mining in 
-      loop ())
+      (let* _ = Lwt_mvar.put node.mining mining in 
+      loop time_delay  ())
     else
-      (print_endline "mining disabled\n";
-      let* _ = Lwt_mvar.put node.mining mining in 
+      (let* _ = Lwt_mvar.put node.mining mining in 
       let* _ = Lwt_unix.sleep time_delay in
       aux ())
   and
-  loop () =
-    let* _ = Lwt_unix.sleep time_delay in
+  loop delay () =
+    let* _ = Lwt_unix.sleep delay in
 
     let* curr_pool = Lwt_mvar.take node.transaction_pool in
     let validated_transactions, remaining_transactions = List.partition (fun (_, verified) -> verified) curr_pool in
@@ -357,14 +363,13 @@ let mining_routine node =
       let new_state = { curr_global_state with trie=new_state_trie } in
       let _ = State.flush_to_db new_state in
       let* _ = Lwt_mvar.put node.global_state new_state in
-      
+
       let* peers_list = Lwt_mvar.take node.known_peers in
       let* _ = Lwt_mvar.put node.known_peers peers_list in
 
       let* _ = broadcast_block peers_list mined_block in
       aux ()
     ) else (
-      print_endline "mine pass...\n";
       let* _ = Lwt_mvar.put node.transaction_pool curr_pool in
       aux ()
     )
@@ -387,11 +392,8 @@ let http_server node =
         handle_transaction_request node body >>= fun () ->
         Server.respond_string ~status:`OK ~body:"Transaction received" ()
     | (`POST, "/block") ->
-        print_endline "\nblock proposal received\n";
         let* _ = Lwt_mvar.take node.mining in
         let* _ = Lwt_mvar.put node.mining false in
-
-        print_endline "mining = false\n";
 
         let* body = body |> Cohttp_lwt.Body.to_string in
         let json_body = Yojson.Basic.from_string body in
@@ -408,8 +410,6 @@ let http_server node =
         let* result = handle_block_proposal_request node peer_addr block_json in
         let* _ = Lwt_mvar.take node.mining in
         let* _ = Lwt_mvar.put node.mining true in
-
-        print_endline "mining = true\n";
 
         (match result with
         | true -> (

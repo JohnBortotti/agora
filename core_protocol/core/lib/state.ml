@@ -234,9 +234,6 @@ module MKPTrie = struct
             let remaining_prefix = list_sub prefix_nibbles common_prefix_len (List.length prefix_nibbles - common_prefix_len) in
             let remaining_nibbles = list_sub nibbles common_prefix_len (List.length nibbles - common_prefix_len) in
 
-            print_endline (nibbles_to_string remaining_prefix);
-            print_endline (nibbles_to_string remaining_nibbles);
-
             let idx1 = List.hd remaining_prefix in
             let idx2 = List.hd remaining_nibbles in
             children.(idx1) <- Some (Extension (List.tl remaining_prefix, next_node));
@@ -473,18 +470,14 @@ module Account = struct
     | coinbase :: [] -> 
       (match apply_transaction_coinbase state coinbase with
         | Ok (new_state) ->
-            print_endline "Coinbase transaction executed!\n";
             new_state
         | _ -> 
-            print_endline "Coinbase transaction error";
             apply_transactions state transactions)
     | coinbase :: transactions ->
       (match apply_transaction_coinbase state coinbase with
         | Ok (new_state) ->
-            print_endline "Coinbase transaction executed!\n";
             apply_transactions new_state transactions
         | _ -> 
-            print_endline "Coinbase transaction error";
             apply_transactions state transactions)
     | _ -> state
 end
@@ -502,9 +495,22 @@ module State = struct
     let new_trie = MKPTrie.insert state.trie key value in
     { state with trie = new_trie }
 
-  (* TODO: create a module for util generic funcs *)
   let hex_of_bytes bytes =
     Bytes.fold_left (fun acc byte -> acc ^ Printf.sprintf "%02x" (int_of_char byte)) "" bytes
+
+  let bytes_of_hex_safe hex_str =
+    let len = String.length hex_str in
+    if len mod 2 <> 0 then failwith "Invalid hex string length";
+    let bytes = Bytes.create (len / 2) in
+    for i = 0 to (len / 2) - 1 do
+      let hex_pair = String.sub hex_str (i * 2) 2 in
+      try
+        let byte_value = int_of_string ("0x" ^ hex_pair) in
+        Bytes.set bytes i (char_of_int byte_value)
+      with
+      | Failure _ -> failwith ("Invalid hex value: " ^ hex_pair)
+    done;
+    Bytes.to_string bytes
 
   let flush_to_db state =
     MKPTrie.hash_iter (fun key value ->
@@ -517,18 +523,42 @@ module State = struct
       Database.write state.db key_hex value_hex
     ) state.trie
 
+  let get_from_db state key =
+    let key_bytes = Bytes.of_string key in
+    let key_hex = hex_of_bytes key_bytes in
+    match Database.get state.db key_hex with
+    | None ->
+        Printf.printf "Key not found in the database: %s\n" key;
+        None
+    | Some value_hex ->
+        (try
+           let value_str = bytes_of_hex_safe value_hex in
+           let rlp_value = RLP.decode value_str in
+           Some rlp_value
+         with
+         | Failure msg -> 
+             Printf.printf "Error during conversion or RLP decoding: %s\n" msg; 
+             None)
+
+  let nibbles_from_db_str s =
+    let nibbles = ref [] in
+      String.iter (fun c ->
+        let nibble = int_of_string ("0x" ^ String.make 1 c) in
+        nibbles := !nibbles @ [nibble]
+      ) s;
+      !nibbles
+
   let revert_to_hash state hash = 
     let rec rebuild_trie state rlp = 
     let open MKPTrie in
     match rlp with
     | `List (`String "leaf" :: `String nibbles_str :: `String value_str :: []) ->
-        let nibbles = string_to_nibbles nibbles_str in
+        let nibbles = nibbles_from_db_str nibbles_str in
         Some (Leaf (nibbles, value_str))
     | `List (`String "extension" :: `String nibbles_str :: `String child_hash :: []) ->
-        let nibbles = string_to_nibbles nibbles_str in
-        let child_hex_key = Bytes.of_string child_hash |> hex_of_bytes in
-        let serialized_child_node = (match Database.get state.db child_hex_key with
-          | Some value -> RLP.decode value 
+        let nibbles = nibbles_from_db_str nibbles_str in
+        let serialized_child_node = (match get_from_db state child_hash with
+          | Some value -> value 
           | None -> failwith "Child node not found in database")
         in
         (match rebuild_trie state serialized_child_node with
@@ -539,9 +569,8 @@ module State = struct
         let children = Array.of_list (List.map (function
           | `String "" -> None
           | `String child_hash -> 
-              let child_hex_key = Bytes.of_string child_hash |> hex_of_bytes in
-              (match Database.get state.db child_hex_key with
-              | Some serialized_child_node -> rebuild_trie state (RLP.decode serialized_child_node)
+              (match get_from_db state child_hash with
+              | Some child_node -> rebuild_trie state (child_node)
               | None -> None)
           | _ -> failwith "Invalid RLP structure for branch node"
         ) children_rlp)
@@ -552,28 +581,25 @@ module State = struct
           | _ -> failwith "Invalid RLP structure for branch node"
         in
         Some (Branch (children, value_opt))
-    | _ -> print_endline "Invalid RLP structure"; None
+    | _ -> print_endline "Invalid RLP structure:"; None
     in
     let rebuild_trie_from_root key =
-      let hex_key = Bytes.of_string key |> hex_of_bytes in
-      match Database.get state.db hex_key with
+      match get_from_db state key with
       | None -> 
-          print_endline ("Node with key " ^ hex_key ^ " not found in the database."); 
+          print_endline ("Node with key " ^ key ^ " not found in the database.\n"); 
           state
       | Some serialized_node ->
-          let trie = rebuild_trie state (RLP.decode serialized_node) in
-
-          print_endline (MKPTrie.string_of_node trie 0);
+          let trie = rebuild_trie state (serialized_node) in
           { state with trie=trie }
     in
     if hash <> "0" then
       begin
-        print_endline ("Reverting to state with hash " ^ hash);
+        print_endline ("reverting to state with hash " ^ hash);
         let restored_state = rebuild_trie_from_root hash in
         restored_state
       end
     else
-      (print_endline "reverting state to genesis block";
+      (print_endline "reverting state to genesis block\n";
       { state with trie=None })
  
   let init_state db_path mem_size =

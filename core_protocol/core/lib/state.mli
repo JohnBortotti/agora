@@ -57,5 +57,6 @@ module State : sig
   val trie_get: t -> string -> MKPTrie.trie
   val trie_set: t -> string -> RLP.t -> t
   val flush_to_db: t -> unit
+  val get_from_db: t -> string -> RLP.t option
   val revert_to_hash: t -> string -> t
 end
