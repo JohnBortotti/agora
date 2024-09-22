@@ -24,11 +24,8 @@ val string_of_block: t -> string
 val string_of_block_header: header -> string
 val block_to_json: t -> Yojson.Basic.t
 val block_of_json: Yojson.Basic.t -> t
-val blocks_of_json: Yojson.Basic.t -> t list
 val block_header_to_json: header -> Yojson.Basic.t
 val block_header_of_json: Yojson.Basic.t -> header
-val block_headers_of_json: Yojson.Basic.t -> header list
-val block_to_json_string: t -> string
 val hash_block: t -> string
 val is_valid_pow: string -> int -> bool
 val calculate_difficulty: t -> int

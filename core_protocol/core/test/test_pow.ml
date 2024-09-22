@@ -50,7 +50,6 @@ let test_proof_of_work () =
     (has_leading_zeroes (hex_to_bin (to_hex (digest_string ("difficult_test" ^ string_of_int nonce)))) 4)
 
 let () =
-  let open Alcotest in
   run "Pow module tests" [
     "Hex_to_bin", [
       test_case "Test hex_to_bin function" `Quick test_hex_to_bin;

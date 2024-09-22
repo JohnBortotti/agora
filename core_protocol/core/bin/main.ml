@@ -7,7 +7,7 @@ TODO:
   - tests
     - [x] pow
     - [x] transaction
-    - [ ] block
+    - [x] block
     - [ ] state (RLP, MKPTrie, Account)
  *)
 

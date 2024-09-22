@@ -138,7 +138,7 @@ let handle_block_proposal_request node peer_addr body =
         let* headers_json = Cohttp_lwt.Body.to_string body in
         let peer_headers = 
           Yojson.Basic.from_string headers_json 
-          |> block_headers_of_json 
+          |> Yojson.Basic.Util.to_list |> List.map block_header_of_json 
         in
 
         let rec find_last_common_block 
@@ -174,7 +174,7 @@ let handle_block_proposal_request node peer_addr body =
 
           let new_blocks: Block.t list = 
             Yojson.Basic.from_string blocks_json 
-            |> blocks_of_json 
+            |> Yojson.Basic.Util.to_list |> List.map block_of_json 
             |> List.rev
           in
 

@@ -80,9 +80,6 @@ let block_header_to_json (header: header) =
     ("difficulty", `Int header.difficulty)
   ]
 
-let block_to_json_string block =
-  block_to_json block |> Yojson.Basic.to_string
-
 let block_of_json json: t =
   let open Yojson.Basic.Util in
   {
@@ -107,13 +104,6 @@ let block_header_of_json json: header =
     difficulty = json |> member "difficulty" |> to_int;
     hash = json |> member "hash" |> to_string;
   }
-
-let blocks_of_json json : t list =
-  let open Yojson.Basic.Util in
-  json |> to_list |> List.map block_of_json
-
-let block_headers_of_json json =
-  json |> Yojson.Basic.Util.to_list |> List.map block_header_of_json
 
 let hash_block block =
   let open Transaction in
