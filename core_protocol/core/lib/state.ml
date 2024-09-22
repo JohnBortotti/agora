@@ -101,10 +101,9 @@ end
 
 module MKPTrie = struct
   type node =
-    | Leaf of nibbles * string
-    | Extension of nibbles * node
+    | Leaf of int list * string
+    | Extension of int list * node
     | Branch of (node option array) * (string option)
-  and nibbles = int list
 
   type trie = node option
 
@@ -175,17 +174,17 @@ module MKPTrie = struct
     | _, [] -> []
     | n, _ :: xs -> drop (n - 1) xs
   
-  let list_sub lst start len =
-    let rec aux lst i len acc =
-      match lst with
-      | [] -> List.rev acc
-      | _ when i < start -> aux (List.tl lst) (i + 1) len acc
-      | _ when len = 0 -> List.rev acc
-      | hd :: tl -> aux tl (i + 1) (len - 1) (hd :: acc)
-  in
-  aux lst 0 len []
-
   let insert (t: trie) (key: string) (value: RLP.t): trie =
+    let list_sub lst start len =
+      let rec aux lst i len acc =
+        match lst with
+        | [] -> List.rev acc
+        | _ when i < start -> aux (List.tl lst) (i + 1) len acc
+        | _ when len = 0 -> List.rev acc
+        | hd :: tl -> aux tl (i + 1) (len - 1) (hd :: acc)
+    in
+    aux lst 0 len []
+    in
     let rec insert_aux node nibbles value =
       match node with
       | None -> 

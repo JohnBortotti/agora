@@ -8,18 +8,15 @@ end
 
 module MKPTrie : sig
   type node =
-    | Leaf of nibbles * string
-    | Extension of nibbles * node
+    | Leaf of int list * string
+    | Extension of int list * node
     | Branch of (node option array) * (string option)
-  and nibbles = int list
-  
   type trie = node option
 
   val string_of_node: trie -> int -> string
   val string_to_nibbles: string -> int list
   val nibbles_to_string: int list -> string
   val common_prefix_length: string list -> string list -> int
-  val list_sub: string list -> int -> int -> string list
   val insert: trie -> string -> RLP.t -> trie
   val lookup: trie -> string -> node option
   val hash: trie -> string

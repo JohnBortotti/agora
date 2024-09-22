@@ -10,7 +10,7 @@ TODO:
     - [x] block
     - [ ] state
         - [x] RLP
-        - [ ] MKPTrie
+        - [x] MKPTrie
         - [ ] Account
  *)
 

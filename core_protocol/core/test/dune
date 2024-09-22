@@ -17,3 +17,8 @@
  (name test_rlp)
  (libraries agora_core alcotest)
 )
+
+(test
+ (name test_mkptrie)
+ (libraries agora_core alcotest)
+)
