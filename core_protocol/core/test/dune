@@ -12,3 +12,8 @@
  (name test_block)
  (libraries agora_core alcotest)
 )
+
+(test
+ (name test_rlp)
+ (libraries agora_core alcotest)
+)

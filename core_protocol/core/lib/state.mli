@@ -2,8 +2,6 @@ module RLP : sig
   type t = [ `String of string | `List of t list ]
 
   val int_to_bytes: int -> int list
-  val encode_string: string -> string
-  val encode_list: string list -> string
   val encode: t -> string
   val decode: string -> t
 end
