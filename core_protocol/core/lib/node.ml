@@ -141,6 +141,7 @@ let handle_block_proposal_request node peer_addr body =
           |> Yojson.Basic.Util.to_list |> List.map block_header_of_json 
         in
 
+        (* TODO: sometimes the common block is older than fetched headers interval *)
         let rec find_last_common_block 
           (chain: Block.t list) (headers: Block.header list) =
           match chain, headers with
@@ -160,7 +161,7 @@ let handle_block_proposal_request node peer_addr body =
         let last_common_block = find_last_common_block curr_chain peer_headers in
         match last_common_block with
         | None ->
-          print_endline "no common block found with the peer chain, rejecting the block.";
+          Printf.printf "no common block found with the peer chain, rejecting the block.";
           Lwt.return_false
         | Some common_block ->
           Printf.printf "common block found index: %d\n\n" common_block.index;

@@ -22,3 +22,8 @@
  (name test_mkptrie)
  (libraries agora_core alcotest)
 )
+
+(test
+ (name test_account)
+ (libraries agora_core alcotest)
+)

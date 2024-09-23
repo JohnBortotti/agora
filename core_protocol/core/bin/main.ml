@@ -8,10 +8,10 @@ TODO:
     - [x] pow
     - [x] transaction
     - [x] block
-    - [ ] state
+    - [x] state
         - [x] RLP
         - [x] MKPTrie
-        - [ ] Account
+        - [x] Account
  *)
 
 open Agora_core

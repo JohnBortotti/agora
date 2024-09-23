@@ -37,7 +37,6 @@ module Account : sig
   val encode: t -> RLP.t
   val decode: RLP.t -> t
   val apply_transaction: MKPTrie.trie -> Transaction.t -> (MKPTrie.trie, string) result
-  val apply_transactions: MKPTrie.trie -> Transaction.t list -> MKPTrie.trie
   val apply_transaction_coinbase: MKPTrie.trie -> Transaction.t -> (MKPTrie.trie, string) result
   val apply_block_transactions: MKPTrie.trie -> Transaction.t list -> MKPTrie.trie
 end
