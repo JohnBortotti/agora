@@ -1,46 +1,78 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, render_template, request, jsonify
 import requests
-import hashlib
 import json
-from coincurve import PrivateKey, PublicKey
+import hashlib
+from coincurve import PrivateKey
 
 app = Flask(__name__)
 
+def send_jsonrpc_request(node_url, method, params, request_id=None):
+    headers = {'Content-Type': 'application/json'}
+    if request_id is None:
+        request_id = 1
+
+    payload = {
+        "jsonrpc": "2.0",
+        "method": method,
+        "params": params,
+        "id": request_id
+    }
+
+    try:
+        response = requests.post(node_url, headers=headers, json=payload)
+        response_json = response.json()
+        if 'error' in response_json:
+            return None, response_json['error']
+        else:
+            return response_json.get('result'), None
+    except requests.exceptions.RequestException as e:
+        return None, {"code": -1, "message": str(e)}
 
 @app.route("/")
 def home():
     node = request.args.get("node", default="http://node1:8080")
-    start_query = request.args.get("start", default="0")
-    end_query = request.args.get("end", default="20")
+    start_query = int(request.args.get("start", default="0"))
+    end_query = int(request.args.get("end", default="20"))
     blocks = []
-    try:
-        r = requests.get(f"{node}/blocks?start={start_query}&end={end_query}")
-        blocks = r.json()
-    except:
+
+    result, error = send_jsonrpc_request(
+        node,
+        "get_blocks",
+        [start_query, end_query],
+        request_id=1
+    )
+
+    if error:
         blocks = []
+    else:
+        blocks = result
 
-    return render_template("index.html", title="Chain explorer", blocks=blocks)
-
+    return render_template("index.html", title="Chain Explorer", blocks=blocks)
 
 @app.route("/consensus")
 def consensus():
     nodes = ["http://node1:8080", "http://node2:8080", "http://node3:8080"]
 
-    start_query = request.args.get("start", default="0")
-    end_query = request.args.get("end", default="20")
+    start_query = int(request.args.get("start", default="0"))
+    end_query = int(request.args.get("end", default="20"))
 
     chains = []
-    for node in nodes:
-        blocks = []
-        try:
-            r = requests.get(f"{node}/blocks?start={start_query}&end={end_query}")
-            blocks = r.json()
-        except:
+    for idx, node in enumerate(nodes):
+        result, error = send_jsonrpc_request(
+            node,
+            "get_blocks",
+            [start_query, end_query],
+            request_id=idx + 1
+        )
+
+        if error:
             blocks = []
+        else:
+            blocks = result
 
         chains.append({"node": node, "blocks": blocks})
 
-    reference_chain = chains[0]["blocks"]
+    reference_chain = chains[0]["blocks"] if chains else []
     validation_results = []
 
     for ref_block in reference_chain:
@@ -71,28 +103,34 @@ def consensus():
 
     return render_template(
         "consensus.html",
-        title="Chain consensus",
+        title="Chain Consensus",
         reference_chain=reference_chain,
         validation_results=validation_results,
     )
-
 
 @app.route("/account")
 def account():
     node = request.args.get("node", default="http://node1:8080")
     account_query = request.args.get("account", default="")
     account = None
-    try:
-        r = requests.get(f"{node}/account?account={account_query}")
-        if r.status_code == 200:
-            account = r.json()
-        else:
-            account = {"error": f"Error fetching from {node}"}
-    except:
-        account = {"error": f"Error fetching from {node}"}
 
-    return render_template("account.html", title="Account explorer", account=account)
+    if not account_query:
+        account = {"error": "No account address provided."}
+        return render_template("account.html", title="Account Explorer", account=account)
 
+    result, error = send_jsonrpc_request(
+        node,
+        "get_account",
+        [account_query],
+        request_id=1
+    )
+
+    if error:
+        account = {"error": f"Error fetching from {node}: {error.get('message', '')}"}
+    else:
+        account = result
+
+    return render_template("account.html", title="Account Explorer", account=account)
 
 @app.route("/account-consensus")
 def account_consensus():
@@ -100,31 +138,43 @@ def account_consensus():
     account_query = request.args.get("account", default="")
     accounts = []
 
-    for node in nodes:
-        account = {}
-        try:
-            r = requests.get(f"{node}/account?account={account_query}")
-            if r.status_code == 404:
-                account = {"error": f"Account not found on {node} (404)"}
-            else:
-                account = r.json()
-        except requests.exceptions.RequestException as e:
-            account = {"error": f"Node {node} unreachable: {str(e)}"}
+    if not account_query:
+        return render_template(
+            "account-consensus.html",
+            title="Account Consensus",
+            reference_account=None,
+            validation_results=[],
+        )
 
-        accounts.append(account)
+    for idx, node in enumerate(nodes):
+        result, error = send_jsonrpc_request(
+            node,
+            "get_account",
+            [account_query],
+            request_id=idx + 1
+        )
 
-    reference_account = accounts[0]
+        if error:
+            account = {"error": f"Error fetching from {node}: {error.get('message', '')}"}
+        else:
+            account = result
+
+        accounts.append({"node": node, "account": account})
+
+    reference_account = accounts[0]["account"] if accounts else None
     validation_results = []
 
-    for idx, account in enumerate(accounts):
+    for idx, entry in enumerate(accounts):
+        account = entry["account"]
+        node = entry["node"]
         if "error" in account:
             validation_results.append(
-                {"node": nodes[idx], "status": "error", "details": account["error"]}
+                {"node": node, "status": "error", "details": account["error"]}
             )
         elif account == reference_account:
             validation_results.append(
                 {
-                    "node": nodes[idx],
+                    "node": node,
                     "status": "valid",
                     "account": account,
                     "details": "Account state matches",
@@ -133,7 +183,7 @@ def account_consensus():
         else:
             validation_results.append(
                 {
-                    "node": nodes[idx],
+                    "node": node,
                     "status": "mismatch",
                     "account": account,
                     "details": "Account state differs",
@@ -142,11 +192,10 @@ def account_consensus():
 
     return render_template(
         "account-consensus.html",
-        title="Account consensus",
+        title="Account Consensus",
         reference_account=reference_account,
         validation_results=validation_results,
     )
-
 
 @app.route("/generate-transaction", methods=["POST"])
 def generate_transaction():
@@ -199,7 +248,6 @@ def generate_transaction():
 
     return jsonify(transaction_payload)
 
-
 @app.route("/send-transaction", methods=["POST"])
 def send_transaction():
     data = request.json
@@ -217,38 +265,31 @@ def send_transaction():
             400,
         )
 
-    try:
-        print(f"Sending transaction to {node_address} with payload:")
-        print(json.dumps(transaction, indent=4))
+    result, error = send_jsonrpc_request(
+        node_address,
+        "submit_transaction",
+        [transaction],
+        request_id=1
+    )
 
-        response = requests.post(f"{node_address}/transaction", json=transaction)
-        if response.status_code == 200:
-            return jsonify(
-                {"status": "success", "message": "Transaction sent successfully."}
-            )
-        else:
-            return (
-                jsonify(
-                    {
-                        "status": "error",
-                        "message": "Failed to send transaction to node.",
-                    }
-                ),
-                500,
-            )
-    except requests.exceptions.RequestException as e:
+    if error:
         return (
             jsonify(
-                {"status": "error", "message": f"Error sending transaction: {str(e)}"}
+                {
+                    "status": "error",
+                    "message": f"Error sending transaction: {error.get('message', '')}",
+                }
             ),
             500,
         )
-
+    else:
+        return jsonify(
+            {"status": "success", "message": "Transaction sent successfully."}
+        )
 
 @app.route("/transaction")
 def transaction():
-    return render_template("transaction.html", title="New transaction")
-
+    return render_template("transaction.html", title="New Transaction")
 
 @app.route("/keys")
 def keys():
@@ -260,11 +301,11 @@ def keys():
 
     return render_template(
         "keys.html",
-        title="New Key pair",
+        title="New Key Pair",
         private_key=private_key_hex,
         public_key=public_key_hex,
     )
 
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+

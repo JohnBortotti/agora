@@ -2,7 +2,14 @@
 TODO:
   - [x] node
   - [x] consensus (forks and conflicts)
-  - [ ] vm, fees and contracts (deploy, state and execution)
+  - [x] JsonRPC (single request)
+  - [ ] JsonRPC (batch request)
+  - [ ] smart contracts
+    - [ ] VM
+    - [ ] agora lang
+    - [ ] deploy contracts
+    - [ ] contract execution
+  - [ ] Transaction fees
   - [x] configs via .env
   - tests
     - [x] pow
@@ -12,6 +19,8 @@ TODO:
         - [x] RLP
         - [x] MKPTrie
         - [x] Account
+        - [ ] node
+        - [ ] jsonrpc
  *)
 
 open Agora_core
