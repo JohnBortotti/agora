@@ -437,7 +437,7 @@ module Account = struct
     | tx :: rest ->
         (match apply_transaction state tx with
         | Ok new_state -> 
-            Printf.printf "Transaction executed ok!\n"; 
+            Printf.printf "Transaction executed ok!\n\n"; 
             apply_transactions new_state rest
         | Error err -> 
             Printf.printf "Transaction execution error: %s\n" err;
@@ -593,7 +593,7 @@ module State = struct
     in
     if hash <> "0" then
       begin
-        print_endline ("reverting to state with hash " ^ hash);
+        print_endline ("reverting to state with hash " ^ hash ^ "\n");
         let restored_state = rebuild_trie_from_root hash in
         restored_state
       end

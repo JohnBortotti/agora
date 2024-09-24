@@ -127,12 +127,12 @@ let handle_block_proposal_request node peer_addr body =
         print_endline "receiving longer chain\n";
 
         let block_end = string_of_int (received_block.index) in
-        let block_start = string_of_int (max 0 (prev_block.index - 2)) in
+        let block_start = string_of_int (max 0 (prev_block.index - 10)) in
         let uri = Uri.of_string
           (peer_addr ^ "/headers?start=" ^ block_start ^ "&end=" ^ block_end) 
         in
 
-        Printf.printf "\ngetting headers: %s to %s\n\n" block_end block_start; 
+        Printf.printf "getting headers: %s to %s\n\n" block_end block_start; 
 
         let* _, body = Cohttp_lwt_unix.Client.get uri in
         let* headers_json = Cohttp_lwt.Body.to_string body in
@@ -387,7 +387,7 @@ let http_server node =
     let uri = req |> Request.uri |> Uri.path in
     match (Request.meth req, uri) with
     | (`POST, "/transaction") ->
-        print_endline "\ntransaction received\n";
+        print_endline "transaction received\n";
         body |> Cohttp_lwt.Body.to_string >>= fun body ->
         handle_transaction_request node body >>= fun () ->
         Server.respond_string ~status:`OK ~body:"Transaction received" ()
