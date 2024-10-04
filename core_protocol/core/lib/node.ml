@@ -41,6 +41,7 @@ notes:
 open Transaction
 open State
 open Lwt.Syntax
+open Virtual_machine
 
 type node = {
   address: string;
@@ -49,6 +50,7 @@ type node = {
   mining: bool Lwt_mvar.t;
   miner_addr: string;
   global_state: State.t Lwt_mvar.t;
+  vm_server: VM.t;
   known_peers: string list Lwt_mvar.t;
 }
 
@@ -456,6 +458,23 @@ module RpcInterface = struct
         | Some (`List [ tx_json ]) ->
             let tx = Transaction.transaction_of_json tx_json in
             let* _ = Features.add_transaction node tx in
+
+            (* only testing running VM *)
+            let vm_id = 
+              VM.spawn_vm 
+              node.vm_server
+              tx.hash
+              tx.sender
+              tx.receiver
+              (Int32.of_int 1000)
+              (Int32.of_int 21000)
+              (Int32.of_int 50)
+              (Int32.of_int 1)
+              "payload" "signature" 
+            in
+            Printf.printf "VM finished execution\n";
+            (* only testing running VM *)
+
             Lwt.return (`String "Transaction received")
         | _ -> Lwt.return (create_error (-32602) "Invalid params" None)
     )
@@ -502,6 +521,7 @@ module Transport = struct
   open Cohttp
 
   let http_server node =
+    Lwt_io.printf "listening for Http connections at: %s\n" node.address >>= fun () ->
     let cors_headers = Cohttp.Header.of_list [
       ("Access-Control-Allow-Origin", "*");
       ("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -527,7 +547,7 @@ let run_node node =
     Lwt.join [
       Features.validate_transaction_pool node;
       Features.mining_routine node;
-      Transport.http_server node
+      Transport.http_server node;
     ] in
   Lwt_main.run main_loop
 

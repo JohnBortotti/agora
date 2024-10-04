@@ -23,6 +23,8 @@ WORKDIR /home/opam/app
 
 COPY ./database/target/release/ /home/opam/database/
 
+COPY ./virtual_machine/target/release/ /home/opam/virtual_machine/
+
 COPY ./core /home/opam/app
 
 RUN mkdir /home/opam/db-data/

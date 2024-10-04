@@ -11,7 +11,7 @@ TODO:
     - [ ] contract execution
   - [ ] Transaction fees
   - [x] configs via .env
-  - tests
+  - [ ] tests
     - [x] pow
     - [x] transaction
     - [x] block
@@ -26,6 +26,7 @@ TODO:
 open Agora_core
 open Agora_core.Node
 open Agora_core.State
+open Agora_core.Virtual_machine
 
 let get_env_var var_name =
   try
@@ -47,7 +48,7 @@ let () =
   | None -> failwith "env var 'KNOWN_PEERS' not found")
   in
 
-  print_endline "running node...\n";
+  print_endline "\nrunning node...\n";
 
   let genesis: Block.t = {
     index = 0;
@@ -67,6 +68,7 @@ let () =
     mining = Lwt_mvar.create true;
     miner_addr = miner_addr_env;
     global_state = Lwt_mvar.create (State.init_state "/home/opam/db-data/global-state" (Unsigned.Size_t.of_int 1024));
+    vm_server = VM.create ();
     known_peers = Lwt_mvar.create known_peers_env;
   } in
-  run_node node
+  run_node node;
