@@ -4,18 +4,12 @@ mod u256;
 use vm::server::VMServer;
 use vm::vm_core::Transaction;
 use std::ffi::{CStr, CString, c_char};
+use uuid::Uuid;
 
 #[no_mangle]
-pub extern "C" fn create_vm_server() -> *mut VMServer {
+pub extern "C" fn ffi_create_vm_server() -> *mut VMServer {
   let server = VMServer::new();
   Box::into_raw(Box::new(server))
-}
-
-#[no_mangle]
-pub extern "C" fn free_vm_server(server_ptr: *mut VMServer) {
-  if !server_ptr.is_null() {
-    unsafe { let _ =Box::from_raw(server_ptr); }
-  }
 }
 
 #[no_mangle]
@@ -60,11 +54,21 @@ pub extern "C" fn ffi_spawn_vm(
 }
 
 #[no_mangle]
-pub extern "C" fn free_c_string(ptr: *mut c_char) {
-  if ptr.is_null() {
-    return;
-  }
-  unsafe {
-    let _ =CString::from_raw(ptr);
-  }
+pub extern "C" fn ffi_send_data_to_vm(
+  server_ptr: *mut VMServer,
+  vm_id: *const c_char,
+  key: *const c_char,
+  data: *const c_char) {
+  let server = unsafe {
+    assert!(!server_ptr.is_null());
+    &*server_ptr
+  };
+
+  let vm_id_str = unsafe { CStr::from_ptr(vm_id).to_str().unwrap() };
+  let key_str = unsafe { CStr::from_ptr(key).to_str().unwrap() };
+  let data_str = unsafe { CStr::from_ptr(data).to_str().unwrap() };
+
+  let vm_id = Uuid::parse_str(vm_id_str).unwrap();
+
+  server.send_data_to_vm(vm_id, key_str.to_string(), data_str.to_string());
 }
