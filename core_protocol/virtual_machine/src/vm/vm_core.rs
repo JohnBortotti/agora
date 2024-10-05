@@ -1,7 +1,9 @@
 use uuid::Uuid;
-use super::server::VMTable;
-use ocaml_sys::{caml_callback3, caml_copy_string, caml_named_value, Value};
+use ocaml_sys::{caml_callback2 , caml_copy_string, caml_named_value, Value};
 use std::ffi::CString;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use super::super::{jsonrpc, jsonrpc::JsonRpcResponse};
+use serde_json::json;
 
 #[derive(Debug, Clone)]
 pub struct Transaction {
@@ -16,96 +18,80 @@ pub struct Transaction {
   pub signature: String,
 }
 
-#[derive(Debug, Clone)]
-pub enum VMStatus {
-  Running,
-  WaitingForData,
-}
-
-pub struct VMState {
-  pub status: VMStatus,
-  pub parent_vm: Option<Uuid>,
-  pub data: Vec<(String, String)>,
-  pub requested_key: Option<String>,
-}
-
 pub struct VM {
   pub id: Uuid,
-  pub vm_table: VMTable,
+  pub rx: Receiver<String>,
   pub transaction: Transaction,
 }
 
 impl VM {
-  pub fn new(id: Uuid, vm_table: VMTable, transaction: Transaction) -> Self {
+  pub fn new(id: Uuid, rx: Receiver<String>, transaction: Transaction) -> Self {
     VM {
       id,
-      vm_table,
+      rx,
       transaction
     }
   }
 
+  // TODO:
+  // returns OK<_> | Err<_> :
+  //    - return writes made on chain (transactions and storage commit)
+  //    - return gas used
   pub fn run(&self) {
     println!("[VM] running: {}\n", self.id);
 
-    // TODO: fetch contract code
+    let account_address = self.transaction.sender.to_string();
+    let request_json = jsonrpc::serialize_request(
+      "get_account",
+      json!([account_address])
+    );
+    let response = self.json_rpc(request_json).unwrap();
+    let code = response.result.unwrap();
 
-    let account_address = "0x12345abcde".to_string();
-
-    self.json_rpc(
-      "get_account_info".to_string(),
-      format!(r#"{{"account": "{}"}}"#, account_address),
-      );
+    println!("\n[VM] code: {:?}\n", code);
 
     println!("\n[VM] finished execution: {}\n", self.id);
   }
 
-  // TODO: set status::running after receive response
-  // TODO: after getting the response, remove the data from guard.data
-  pub fn json_rpc(&self, method: String, params: String) {
-    println!("\n[VM] {} is making a JSON-RPC request: {} ; {}\n", self.id, method, params);
+  pub fn json_rpc(&self, json: String) -> Result<JsonRpcResponse, String> {
+    println!("\n[VM] {} is making a JSON-RPC request: {}\n", self.id, json);
 
-    {
-      let mut vms_guard = self.vm_table.lock().unwrap();
-      let vm_state = vms_guard.get_mut(&self.id).unwrap();
-      let mut state_guard = vm_state.lock().unwrap();
-      state_guard.status = VMStatus::WaitingForData;
-      state_guard.requested_key = Some(method.clone());
-    }
+    Self::call_ocaml_callback(&self.id.to_string(), &json);
 
-    Self::call_ocaml_callback(&self.id.to_string(), &method, &params);
-
-    loop {
-      std::thread::sleep(std::time::Duration::from_millis(200));
-
-      let vms_guard = self.vm_table.lock().unwrap();
-      let vm_state = vms_guard.get(&self.id).unwrap();
-      let state_guard = vm_state.lock().unwrap();
-
-      if !state_guard.data.is_empty() {
-        for (key, value) in &state_guard.data {
-          println!("[VM] {} received JSON-RPC response for {}: {}\n", self.id, key, value);
+    match self.rx.recv_timeout(std::time::Duration::from_secs(12)) {
+      Ok(message) => {
+        println!("[VM] Received message: {}", message);
+        return match jsonrpc::deserialize_response(&message) {
+          Ok(res) => Ok(res),
+          _ => Err("message deserialize error".to_string())
         }
-        break;
-      } else {}
-    }
+      }
+      Err(RecvTimeoutError::Timeout) => {
+        println!("[VM] No message received within timeout. Continuing...");
+        return Err("message timeout".to_string())
+      }
+      Err(RecvTimeoutError::Disconnected) => {
+        println!("[VM] Channel disconnected. Shutting down VM.");
+        return Err("channel disconnected".to_string())
+      }
+    };
+
   }
 
-  pub fn call_ocaml_callback(vm_id: &str, method: &str, params: &str) {
+  pub fn call_ocaml_callback(vm_id: &str, json: &str) {
     let vm_id_cstring = CString::new(vm_id).expect("Failed to create CString for vm_id");
-    let method_cstring = CString::new(method).expect("Failed to create CString for method");
-    let params_cstring = CString::new(params).expect("Failed to create CString for params");
+    let json_cstring = CString::new(json).expect("Failed to create CString for method");
 
     unsafe {
       let vm_id_value: Value = caml_copy_string(vm_id_cstring.as_ptr());
-      let method_value: Value = caml_copy_string(method_cstring.as_ptr());
-      let params_value: Value = caml_copy_string(params_cstring.as_ptr());
+      let json_value: Value = caml_copy_string(json_cstring.as_ptr());
 
       let ocaml_callback_str = CString::new("ocaml_json_rpc_callback").unwrap();
       let ocaml_callback_fn: *const Value =
         caml_named_value(ocaml_callback_str.as_ptr());
 
       if !ocaml_callback_fn.is_null() {
-        caml_callback3(*ocaml_callback_fn, vm_id_value, method_value, params_value);
+        caml_callback2(*ocaml_callback_fn, vm_id_value, json_value);
       } else {
         eprintln!("OCaml callback not found");
       }

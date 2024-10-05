@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, RwLock};
 use uuid::Uuid;
-use super::vm_core::{VMState, VM, Transaction, VMStatus};
+use super::vm_core::{VM, Transaction};
+use std::sync::mpsc::{Sender, channel, Receiver};
 
-pub type VMTable = Arc<Mutex<HashMap<Uuid, Arc<Mutex<VMState>>>>>;
+pub type VMTable = Arc<RwLock<HashMap<Uuid, Sender<String>>>>;
 
 pub struct VMServer {
   vm_table: VMTable,
@@ -19,40 +20,35 @@ impl VMServer {
 
   pub fn spawn_vm(&self, transaction: Transaction) -> Uuid {
     let vm_id = Uuid::new_v4();
-    let vm = VM::new(vm_id, self.vm_table.clone(), transaction);
-
-    let state = VMState {
-        status: VMStatus::Running,
-        parent_vm: None,
-        data: Vec::new(),
-        requested_key: None,
-    };
+    let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+    let vm = VM::new(vm_id, rx, transaction);
 
     {
-      let mut vms_guard = self.vm_table.lock().unwrap();
-      vms_guard.insert(vm_id, Arc::new(Mutex::new(state)));
+      let mut vms = self.vm_table.write().unwrap();
+      vms.insert(vm_id, tx);
     }
 
     println!("\n[VM] spawning VM with ID: {}\n", vm_id);
 
-    std::thread::spawn(move ||{
-      vm.run()
-    });
+    vm.run();
 
     vm_id
   }
 
-  pub fn send_data_to_vm(&self, vm_id: Uuid, key: String, data: String) {
+  pub fn send_data_to_vm(&self, vm_id: Uuid, json: String) {
     println!("[send_data_to_vm] Received data for VM: {}", vm_id);
-
-    let mut vms_guard = self.vm_table.lock().unwrap();
-
-    if let Some(vm_state) = vms_guard.get_mut(&vm_id) {
-      let mut vm_state_guard = vm_state.lock().unwrap();
-
-      let _ = vm_state_guard.data.push((key, data));
-      vm_state_guard.status = VMStatus::Running;
+    if let Ok(vms) = self.vm_table.read() {
+      if let Some(tx) = vms.get(&vm_id) {
+        if tx.send(json.clone()).is_ok() {
+          println!("[send_data_to_vm] Data sent to VM: {}", vm_id);
+        } else {
+          println!("[send_data_to_vm] Failed to send data to VM: {}", vm_id);
+        }
+      } else {
+        println!("[send_data_to_vm] VM not found for ID: {}", vm_id);
+      }
+    } else {
+      eprintln!("[send_data_to_vm] Failed to acquire read lock");
     }
   }
-
 }
