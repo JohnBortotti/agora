@@ -108,7 +108,7 @@ let validate_transaction_coinbase tx =
     false
   else if tx.sender <> "0" then
     false
-  else if tx.amount <> 1 then
+  else if tx.amount <> 5 then
     false
   else if tx.gas_limit <> 0 then
     false

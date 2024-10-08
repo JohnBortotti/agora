@@ -31,11 +31,6 @@ TODO:
     - [ ] gossip protocol
     - [x] paginate /chain endpoint
     - [x] add transactions.hash field
-
-notes:
-  - consider that timeouts before mining can be useful, since the peer can receive transactions 
-  in that interval, resulting in a longer chain resolution compared to nodes that start mining
-  instantly, winning by "most work chain". also, implement the "most work chain" algorithm
  *)
 
 open Transaction
@@ -308,7 +303,8 @@ module Features = struct
                       common_block.state_root 
                     in
                     let updated_trie = List.fold_left (fun state (block: Block.t) ->
-                        Account.apply_block_transactions state block.transactions (run_vm node)
+                        Account.apply_block_transactions 
+                        node.miner_addr state block.transactions (run_vm node)
                       )
                       reverted_state.trie
                       new_blocks 
@@ -345,6 +341,7 @@ module Features = struct
 
         let* curr_state = Lwt_mvar.take node.global_state in
         let updated_trie = Account.apply_block_transactions
+          node.miner_addr
           curr_state.trie
           received_block.transactions
           (run_vm node)
@@ -389,7 +386,7 @@ module Features = struct
       hash = "";
       sender = "0";
       receiver = miner_addr;
-      amount = 1;
+      amount = 5;
       gas_limit = 0;
       gas_price = 0;
       nonce = 0;
@@ -398,6 +395,7 @@ module Features = struct
     } in
 
     let updated_state = Account.apply_block_transactions 
+      node.miner_addr
       curr_state
       (coinbase_tx :: transactions)
       (run_vm node)

@@ -7,9 +7,11 @@ TODO:
   - [ ] smart contracts
     - [ ] VM
     - [ ] agora lang
-    - [ ] deploy contracts
-    - [ ] contract execution
+    - [x] deploy contracts
+    - [x] contract execution
   - [ ] Transaction fees
+    - [x] transact fees
+    - [ ] rever fees on chain split
   - [x] configs via .env
   - [ ] tests
     - [x] pow

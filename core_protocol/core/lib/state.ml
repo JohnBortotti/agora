@@ -391,13 +391,10 @@ module Account = struct
           | _ -> None)
       | _ -> None
 
-  (* TODO: validate if sender has funds to pay fees *)
-  (* TODO: if tx.receiver is a contract, spawn it on VM *)
-  let apply_transaction state tx vm_fun =
+  let apply_transaction miner_addr state tx vm_fun =
     let open Digestif.SHA256 in
-     
+    (* TODO: fix contract_address generation *)
     if tx.receiver = "0" then begin
-      (* TODO: fix contract_address generation *)
       let contract_address = to_hex (digest_string
         (RLP.encode(`List[`String tx.sender; `String (string_of_int tx.nonce)]))
       ) in
@@ -423,6 +420,8 @@ module Account = struct
       | Some sender_account -> 
         if sender_account.balance < tx.amount then
           Error "Insufficient balance"
+        else if sender_account.balance < tx.amount + (tx.gas_limit * tx.gas_price) then
+          Error "Insufficient balance to pay fees"
         else if sender_account.nonce <> tx.nonce then
           Error "Invalid nonce"
         else
@@ -439,12 +438,26 @@ module Account = struct
             balance = sender_account.balance - tx.amount;
             nonce = sender_account.nonce + 1;
           } in
+          let updated_miner_account = (match get_account state miner_addr with
+            | None -> {
+                address = miner_addr;
+                balance = (tx.gas_limit * tx.gas_price);
+                nonce = 0;
+                storage_root = "";
+                code_hash = "";
+              }
+            | Some miner_acc -> 
+                { miner_acc with balance = miner_acc.balance + (tx.gas_limit * tx.gas_price) }
+            )
+          in
           let new_state = 
             MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) 
-            |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
+            |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account)
+            |> fun f -> MKPTrie.insert f miner_addr (encode updated_miner_account) in
           Ok (new_state)
         | Some receiver_account ->
           if receiver_account.code_hash <> "" then begin
+            (* TODO: pay VM used gas *)
             let res = vm_fun tx in
             Printf.printf "[Ocaml transaction module] VM %s finished execution\n" res;
             Ok(state)
@@ -454,27 +467,40 @@ module Account = struct
               receiver_account with balance = receiver_account.balance + tx.amount 
             } in
             let updated_sender_account = { sender_account with
-              balance = sender_account.balance - tx.amount;
+              balance = sender_account.balance - (tx.amount + (tx.gas_limit * tx.gas_price));
               nonce = sender_account.nonce + 1;
             } in
+            let updated_miner_account = (match get_account state miner_addr with
+              | None -> {
+                  address = miner_addr;
+                  balance = (tx.gas_limit * tx.gas_price);
+                  nonce = 0;
+                  storage_root = "";
+                  code_hash = "";
+                }
+              | Some miner_acc -> 
+                  { miner_acc with balance = miner_acc.balance + (tx.gas_limit * tx.gas_price) }
+            )
+            in
             let new_state = 
               MKPTrie.insert state receiver_account.address (encode updated_receiver_account) 
-              |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
+              |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account)
+              |> fun f -> MKPTrie.insert f miner_addr (encode updated_miner_account) in
             Ok (new_state)
           end
 
   (* TODO: each transaction should generate a log with topics,
    this is where we use the Error of apply_transaction *)
-  let rec apply_transactions state transactions vm_fun = 
+  let rec apply_transactions miner_addr state transactions vm_fun = 
     match transactions with
     | tx :: rest ->
-        (match apply_transaction state tx vm_fun with
+        (match apply_transaction miner_addr state tx vm_fun with
         | Ok new_state -> 
             Printf.printf "Transaction executed ok!\n\n"; 
-            apply_transactions new_state rest vm_fun
+            apply_transactions miner_addr new_state rest vm_fun
         | Error err -> 
             Printf.printf "Transaction execution error: %s\n" err;
-            apply_transactions state rest vm_fun)
+            apply_transactions miner_addr state rest vm_fun)
     | _ -> state
 
   let apply_transaction_coinbase state tx =
@@ -487,7 +513,9 @@ module Account = struct
         storage_root = "";
         code_hash = "";
       } in
-      let new_state = MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) in
+      let new_state = 
+        MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) 
+      in
       Ok(new_state)
     | Some receiver_account ->
       let updated_receiver_account = {
@@ -497,20 +525,20 @@ module Account = struct
         MKPTrie.insert state receiver_account.address (encode updated_receiver_account) in
       Ok(new_state)
 
-  let apply_block_transactions state transactions vm_fun: MKPTrie.trie =
+  let apply_block_transactions miner_addr state transactions vm_fun: MKPTrie.trie =
     match transactions with
     | coinbase :: [] -> 
       (match apply_transaction_coinbase state coinbase with
         | Ok (new_state) ->
             new_state
         | _ -> 
-            apply_transactions state transactions vm_fun)
+            apply_transactions miner_addr state transactions vm_fun)
     | coinbase :: transactions ->
       (match apply_transaction_coinbase state coinbase with
         | Ok (new_state) ->
-            apply_transactions new_state transactions vm_fun
+            apply_transactions miner_addr new_state transactions vm_fun
         | _ -> 
-            apply_transactions state transactions vm_fun)
+            apply_transactions miner_addr state transactions vm_fun)
     | _ -> state
 end
 

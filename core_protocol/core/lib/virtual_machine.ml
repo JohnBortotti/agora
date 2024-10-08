@@ -22,7 +22,6 @@ module VM = struct
     server: unit ptr;
   }
 
-  (* TODO: receive a full transaction data structure, and split it to feed ffi args *)
   let spawn_vm vm_server hash sender receiver amount gas_limit gas_price nonce payload signature =
     if is_null vm_server.server then failwith "VM server is not initialized properly";
     let result_str = 
