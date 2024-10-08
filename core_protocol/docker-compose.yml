@@ -5,7 +5,8 @@ services:
     image: ocaml-project
     environment:
       - NODE_ADDR=http://node1:8080
-      - MINER_ADDR=1
+      - MINER_ADDR=04757e943e7faf81f941a2d6189e444cceb112d921c0079098f07b3bc8e0c0741f08a8f6b07f093d1def66955f2957edcbbdf6c9b7cf5c99beb00c4e4a26dd21b2
+      # Private Key: cac05ff44a2c4720ffe5a50211d17f8124c4e0ea66c60a241b94a36713de8852
       - KNOWN_PEERS=http://node3:8080
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
       - VM_LIB_PATH=/home/opam/virtual_machine/libvirtual_machine.so
@@ -24,7 +25,8 @@ services:
     image: ocaml-project
     environment:
       - NODE_ADDR=http://node2:8080
-      - MINER_ADDR=2
+      - MINER_ADDR=0431480f7fb51dd04dc6272489d095447907c3cf18157538e8f449c9e71784b82c34b81877b41bb04c2647efb3550506909072c609b7dcdd716b07e204aeec8132
+      # Private Key: e095ce3d4dcdc2170d7e394146a3929744e20de516fcb9799ddbbfe9a5025de4
       - KNOWN_PEERS=http://node3:8080
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
       - VM_LIB_PATH=/home/opam/virtual_machine/libvirtual_machine.so
@@ -41,7 +43,8 @@ services:
     image: ocaml-project
     environment:
       - NODE_ADDR=http://node3:8080
-      - MINER_ADDR=3
+      - MINER_ADDR=04c2350f4491d8bcdb4c953865f1520e5940c2d2cb8fc4402c7cc7b379cc1c14fe5ca5ec8f1e6966a71e6ee29fb2dc4e215eca0498fa30c7839e5f579969c42383
+      # Private Key: 68fb9d57ee2d01c149ea8b912b436db2b5a776bc5660eec7e2342c1d46dec767
       - KNOWN_PEERS=http://node1:8080,http://node2:8080
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
       - VM_LIB_PATH=/home/opam/virtual_machine/libvirtual_machine.so
