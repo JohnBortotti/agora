@@ -23,10 +23,7 @@ TODO:
         - [ ] jsonrpc
  *)
 
-open Agora_core
 open Agora_core.Node
-open Agora_core.State
-open Agora_core.Virtual_machine
 
 let get_env_var var_name =
   try
@@ -50,25 +47,5 @@ let () =
 
   print_endline "\nrunning node...\n";
 
-  let genesis: Block.t = {
-    index = 0;
-    previous_hash = "";
-    timestamp = 1726089622.000000;
-    transactions = [];
-    miner = "0";
-    state_root = "0";
-    nonce = 0;
-    difficulty = 4;
-    hash = "";
-  } in
-  let node = {
-    address = node_addr;
-    transaction_pool = Lwt_mvar.create [];
-    blockchain = Lwt_mvar.create [{ genesis with hash = Block.hash_block genesis }];
-    mining = Lwt_mvar.create true;
-    miner_addr = miner_addr_env;
-    global_state = Lwt_mvar.create (State.init_state "/home/opam/db-data/global-state" (Unsigned.Size_t.of_int 1024));
-    vm_server = VM.create ();
-    known_peers = Lwt_mvar.create known_peers_env;
-  } in
+  let node = new_node node_addr miner_addr_env known_peers_env in
   run_node node;

@@ -391,57 +391,90 @@ module Account = struct
           | _ -> None)
       | _ -> None
 
-  let apply_transaction state tx =
-    match get_account state tx.sender with
-    | None -> Error "Sender account not found"
-    | Some sender_account -> 
-      if sender_account.balance < tx.amount then
-        Error "Insufficient balance"
-      else if sender_account.nonce <> tx.nonce then
-        Error "Invalid nonce"
-      else
-        match get_account state tx.receiver with
-      | None ->
-        let new_receiver_account = {
-          address = tx.receiver;
-          balance = tx.amount;
-          nonce = 0;
-          storage_root = "";
-          code_hash = "";
-        } in
-        let updated_sender_account = { sender_account with
-          balance = sender_account.balance - tx.amount;
-          nonce = sender_account.nonce + 1;
-        } in
-        let new_state = 
-          MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) 
-          |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
-        Ok (new_state)
-      | Some receiver_account ->
-        let updated_receiver_account = { 
-          receiver_account with balance = receiver_account.balance + tx.amount 
-        } in
-        let updated_sender_account = { sender_account with
-          balance = sender_account.balance - tx.amount;
-          nonce = sender_account.nonce + 1;
-        } in
-        let new_state = 
-          MKPTrie.insert state receiver_account.address (encode updated_receiver_account) 
-          |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
-        Ok (new_state)
+  (* TODO: validate if sender has funds to pay fees *)
+  (* TODO: if tx.receiver is a contract, spawn it on VM *)
+  let apply_transaction state tx vm_fun =
+    let open Digestif.SHA256 in
+     
+    if tx.receiver = "0" then begin
+      (* TODO: fix contract_address generation *)
+      let contract_address = to_hex (digest_string
+        (RLP.encode(`List[`String tx.sender; `String (string_of_int tx.nonce)]))
+      ) in
+      (match get_account state contract_address with
+      | None -> 
+          let contract_acc = {
+            address = contract_address;
+            balance = 0;
+            nonce = 0;
+            storage_root = "";
+            (* TODO: get the correct code, we also have the deploy code *)
+            code_hash = tx.payload;
+          } in
+          Printf.printf "contract %s created\n" contract_acc.address;
+          let new_state = MKPTrie.insert state contract_acc.address (encode contract_acc) in
+          Ok (new_state)
+      | _ -> Error "Account already exists"
+      )
+    end
+    else   
+      match get_account state tx.sender with
+      | None -> Error "Sender account not found"
+      | Some sender_account -> 
+        if sender_account.balance < tx.amount then
+          Error "Insufficient balance"
+        else if sender_account.nonce <> tx.nonce then
+          Error "Invalid nonce"
+        else
+          match get_account state tx.receiver with
+        | None ->
+          let new_receiver_account = {
+            address = tx.receiver;
+            balance = tx.amount;
+            nonce = 0;
+            storage_root = "";
+            code_hash = "";
+          } in
+          let updated_sender_account = { sender_account with
+            balance = sender_account.balance - tx.amount;
+            nonce = sender_account.nonce + 1;
+          } in
+          let new_state = 
+            MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) 
+            |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
+          Ok (new_state)
+        | Some receiver_account ->
+          if receiver_account.code_hash <> "" then begin
+            let res = vm_fun tx in
+            Printf.printf "[Ocaml transaction module] VM %s finished execution\n" res;
+            Ok(state)
+          end
+          else begin
+            let updated_receiver_account = { 
+              receiver_account with balance = receiver_account.balance + tx.amount 
+            } in
+            let updated_sender_account = { sender_account with
+              balance = sender_account.balance - tx.amount;
+              nonce = sender_account.nonce + 1;
+            } in
+            let new_state = 
+              MKPTrie.insert state receiver_account.address (encode updated_receiver_account) 
+              |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account) in
+            Ok (new_state)
+          end
 
   (* TODO: each transaction should generate a log with topics,
    this is where we use the Error of apply_transaction *)
-  let rec apply_transactions state transactions = 
+  let rec apply_transactions state transactions vm_fun = 
     match transactions with
     | tx :: rest ->
-        (match apply_transaction state tx with
+        (match apply_transaction state tx vm_fun with
         | Ok new_state -> 
             Printf.printf "Transaction executed ok!\n\n"; 
-            apply_transactions new_state rest
+            apply_transactions new_state rest vm_fun
         | Error err -> 
             Printf.printf "Transaction execution error: %s\n" err;
-            apply_transactions state rest)
+            apply_transactions state rest vm_fun)
     | _ -> state
 
   let apply_transaction_coinbase state tx =
@@ -464,20 +497,20 @@ module Account = struct
         MKPTrie.insert state receiver_account.address (encode updated_receiver_account) in
       Ok(new_state)
 
-  let apply_block_transactions state transactions: MKPTrie.trie =
+  let apply_block_transactions state transactions vm_fun: MKPTrie.trie =
     match transactions with
     | coinbase :: [] -> 
       (match apply_transaction_coinbase state coinbase with
         | Ok (new_state) ->
             new_state
         | _ -> 
-            apply_transactions state transactions)
+            apply_transactions state transactions vm_fun)
     | coinbase :: transactions ->
       (match apply_transaction_coinbase state coinbase with
         | Ok (new_state) ->
-            apply_transactions new_state transactions
+            apply_transactions new_state transactions vm_fun
         | _ -> 
-            apply_transactions state transactions)
+            apply_transactions state transactions vm_fun)
     | _ -> state
 end
 

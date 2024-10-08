@@ -42,6 +42,7 @@ open Transaction
 open State
 open Lwt.Syntax
 open Virtual_machine
+open Jsonrpc
 
 type node = {
   address: string;
@@ -50,7 +51,6 @@ type node = {
   mining: bool Lwt_mvar.t;
   miner_addr: string;
   global_state: State.t Lwt_mvar.t;
-  vm_server: VM.t;
   known_peers: string list Lwt_mvar.t;
 }
 
@@ -58,7 +58,8 @@ module Features = struct
   let add_transaction node tx =
     let* current_pool = Lwt_mvar.take node.transaction_pool in
     let updated_pool = (tx, false) :: current_pool in
-    Lwt_mvar.put node.transaction_pool updated_pool
+    let* _ = Lwt_mvar.put node.transaction_pool updated_pool in
+    Lwt.return_unit
 
   let get_account node address =
     let* state = Lwt_mvar.take node.global_state in
@@ -73,7 +74,6 @@ module Features = struct
             let acc_json = Account.account_to_json decoded_acc in
             Lwt.return acc_json
         | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
-
 
   let get_block_headers node start_idx end_idx =
     let* chain = Lwt_mvar.take node.blockchain in
@@ -135,6 +135,41 @@ module Features = struct
     in
     let* _ = Lwt_list.iter_p broadcast_to_peer peers_list in
     Lwt.return_unit
+
+  let run_vm node tx = 
+    let handle_method node method_name params =
+      (match method_name with
+      | "get_headers" -> (
+        (match params with
+          | Some (`List [ `Int start_idx; `Int end_idx ]) ->
+              get_block_headers node start_idx end_idx
+          | _ -> Lwt.return (create_error (-32602) "Invalid params" None))
+      )
+      | "get_blocks" -> (
+          (match params with
+          | Some (`List [ `Int start_idx; `Int end_idx ]) ->
+              get_blocks node start_idx end_idx
+          | _ -> Lwt.return (create_error (-32602) "Invalid params" None))
+      )
+      | "get_account" -> (
+          (match params with
+          | Some (`List [ `String address ]) -> get_account node address
+          | _ -> Lwt.return (create_error (-32602) "Invalid params" None)))
+      | _ -> Lwt.return (create_error (-32601) "Method not found" None))
+    in
+    let handle_vm_request node request_json =
+      (match Jsonrpc.parse_request_from_string request_json with
+      | Ok req -> (
+          match Jsonrpc.validate_request req with
+          | Ok validated_req ->
+
+              let* response = handle_method node validated_req.method_name validated_req.params in
+              Lwt.return (Jsonrpc.create_response ~result:(response) validated_req.id)
+          | Error err -> Lwt.return err
+        )
+      | Error err -> Lwt.return err)
+    in
+    VM.execute_vm tx (handle_vm_request node)
 
   let handle_block_proposal node peer_addr block_json =
     let received_block = Block.block_of_json block_json in
@@ -273,7 +308,7 @@ module Features = struct
                       common_block.state_root 
                     in
                     let updated_trie = List.fold_left (fun state (block: Block.t) ->
-                        Account.apply_block_transactions state block.transactions
+                        Account.apply_block_transactions state block.transactions (run_vm node)
                       )
                       reverted_state.trie
                       new_blocks 
@@ -312,6 +347,7 @@ module Features = struct
         let updated_trie = Account.apply_block_transactions
           curr_state.trie
           received_block.transactions
+          (run_vm node)
         in  
         let updated_state = { curr_state with trie=updated_trie } in
         let _ = State.flush_to_db updated_state in
@@ -347,7 +383,7 @@ module Features = struct
     let* _ = Lwt_unix.sleep 3.0 in
     validate_transaction_pool node
 
-  let mine_block curr_state transactions (prev_block: Block.t) difficulty miner_addr  =
+  let mine_block node curr_state transactions (prev_block: Block.t) difficulty miner_addr  =
     let open Block in
     let coinbase_tx: Transaction.t = {
       hash = "";
@@ -364,6 +400,7 @@ module Features = struct
     let updated_state = Account.apply_block_transactions 
       curr_state
       (coinbase_tx :: transactions)
+      (run_vm node)
     in
     let state_root = MKPTrie.hash updated_state in
 
@@ -423,7 +460,7 @@ module Features = struct
         let difficulty = Block.calculate_difficulty prev_block in
         let miner_addr = node.miner_addr in
 
-        let* (new_state_trie, mined_block) = mine_block 
+        let* (new_state_trie, mined_block) = mine_block node
         curr_global_state.trie transactions_to_mine prev_block difficulty miner_addr in
 
         let new_chain = mined_block :: curr_blockchain in
@@ -449,8 +486,6 @@ module Features = struct
 end
 
 module RpcInterface = struct
-  open Jsonrpc
-
   let call_method node method_name params =
     match method_name with
     | "submit_transaction" -> (
@@ -458,23 +493,6 @@ module RpcInterface = struct
         | Some (`List [ tx_json ]) ->
             let tx = Transaction.transaction_of_json tx_json in
             let* _ = Features.add_transaction node tx in
-
-            (* only testing running VM *)
-            let vm_id = 
-              VM.spawn_vm 
-              node.vm_server
-              tx.hash
-              tx.sender
-              tx.receiver
-              (Int32.of_int 1000)
-              (Int32.of_int 21000)
-              (Int32.of_int 50)
-              (Int32.of_int 1)
-              "payload" "signature" 
-            in
-            Printf.printf "VM finished execution\n";
-            (* only testing running VM *)
-
             Lwt.return (`String "Transaction received")
         | _ -> Lwt.return (create_error (-32602) "Invalid params" None)
     )
@@ -504,7 +522,7 @@ module RpcInterface = struct
     | _ -> Lwt.return (create_error (-32601) "Method not found" None)
 
   let handle_request node request_json =
-    match Jsonrpc.parse_request_from_string request_json with
+    (match Jsonrpc.parse_request_from_string request_json with
     | Ok req -> (
         match Jsonrpc.validate_request req with
         | Ok validated_req ->
@@ -512,7 +530,7 @@ module RpcInterface = struct
             Lwt.return (Jsonrpc.create_response ~result:(response) validated_req.id)
         | Error err -> Lwt.return err
       )
-    | Error err -> Lwt.return err
+    | Error err -> Lwt.return err)
 end
 
 module Transport = struct
@@ -542,6 +560,33 @@ module Transport = struct
     Server.create ~mode:(`TCP (`Port 8080)) server
 end
 
+let new_node node_addr miner_addr known_peers =
+  let open Block in
+  
+  let genesis = {
+    index = 0;
+    previous_hash = "";
+    timestamp = 1726089622.000000;
+    transactions = [];
+    miner = "0";
+    state_root = "0";
+    nonce = 0;
+    difficulty = 4;
+    hash = "";
+  } in
+  let node = {
+    address = node_addr;
+    transaction_pool = Lwt_mvar.create [];
+    blockchain = Lwt_mvar.create [{ genesis with hash = Block.hash_block genesis }];
+    mining = Lwt_mvar.create true;
+    miner_addr = miner_addr;
+    global_state = 
+      Lwt_mvar.create 
+      (State.init_state "/home/opam/db-data/global-state" (Unsigned.Size_t.of_int 1024));
+    known_peers = Lwt_mvar.create known_peers;
+  } in
+  node
+   
 let run_node node =
   let main_loop =
     Lwt.join [

@@ -59,17 +59,15 @@
     </div>
     <br>
 
-    <!-- Display the Account Information -->
     <div class="block-container valid">
       <h3>Account Details</h3>
       <p><strong>Account Address:</strong> {{ reference_account['address'] }}</p>
       <p><strong>Balance:</strong> {{ reference_account['balance'] }}</p>
       <p><strong>Nonce:</strong> {{ reference_account['nonce'] }}</p>
-      <p><strong>Storage Root:</strong> {{ reference_account['storageRoot'] }}</p>
-      <p><strong>Code Hash:</strong> {{ reference_account['codeHash'] }}</p>
+      <p><strong>Storage Root:</strong> {{ reference_account['storage_root'] }}</p>
+      <p><strong>Code Hash:</strong> {{ reference_account['code_hash'] }}</p>
     </div>
 
-    <!-- Display validation results from all nodes -->
     <h3>Node Validation Results:</h3>
     {% for result in validation_results %}
       <div class="block-container {% if result.status == 'valid' %}valid{% else %}invalid{% endif %}">
@@ -90,8 +88,8 @@
               <p><strong>Account Address:</strong> {{ result.account['address'] }}</p>
               <p><strong>Balance:</strong> {{ result.account['balance'] }}</p>
               <p><strong>Nonce:</strong> {{ result.account['nonce'] }}</p>
-              <p><strong>Storage Root:</strong> {{ result.account['storageRoot'] }}</p>
-              <p><strong>Code Hash:</strong> {{ result.account['codeHash'] }}</p>
+              <p><strong>Storage Root:</strong> {{ result.account['storage_root'] }}</p>
+	      <p><strong>Code Hash:</strong> {{ result.account['code_hash']}} </p>
             {% endif %}
           </div>
         </details>

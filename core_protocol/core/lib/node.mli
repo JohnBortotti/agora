@@ -1,5 +1,4 @@
 open State
-open Virtual_machine
 
 type node = {
   address: string;
@@ -8,8 +7,8 @@ type node = {
   mining: bool Lwt_mvar.t;
   miner_addr: string;
   global_state: State.t Lwt_mvar.t;
-  vm_server: VM.t;
   known_peers: string list Lwt_mvar.t;
 }
 
+val new_node: string -> string -> string list -> node
 val run_node: node -> unit
