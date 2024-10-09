@@ -157,7 +157,6 @@ module Features = struct
       | Ok req -> (
           match Jsonrpc.validate_request req with
           | Ok validated_req ->
-
               let* response = handle_method node validated_req.method_name validated_req.params in
               Lwt.return (Jsonrpc.create_response ~result:(response) validated_req.id)
           | Error err -> Lwt.return err
@@ -298,10 +297,13 @@ module Features = struct
                     let* _ = Lwt_mvar.put node.transaction_pool updated_tx_pool in
 
                     let* curr_state = Lwt_mvar.take node.global_state in
+                    let* _ = Lwt_mvar.put node.global_state curr_state in
+
                     let reverted_state = State.revert_to_hash 
                       curr_state 
                       common_block.state_root 
                     in
+
                     let updated_trie = List.fold_left (fun state (block: Block.t) ->
                         Account.apply_block_transactions 
                         block.miner state block.transactions (run_vm node)
@@ -312,6 +314,8 @@ module Features = struct
 
                     let updated_state = {reverted_state with trie=updated_trie} in
                     State.flush_to_db updated_state;
+
+                    let* _ = Lwt_mvar.take node.global_state in
                     let* _ = Lwt_mvar.put node.global_state updated_state in
                     
                     Lwt.return_true
@@ -340,13 +344,18 @@ module Features = struct
         let* _ = Lwt_mvar.put node.transaction_pool updated_transaction_pool in
 
         let* curr_state = Lwt_mvar.take node.global_state in
+        let* _ = Lwt_mvar.put node.global_state curr_state in
+
         let updated_trie = Account.apply_block_transactions
           received_block.miner
           curr_state.trie
           received_block.transactions
           (run_vm node)
         in  
+
+        let* curr_state = Lwt_mvar.take node.global_state in
         let updated_state = { curr_state with trie=updated_trie } in
+
         let _ = State.flush_to_db updated_state in
         let* _ = Lwt_mvar.put node.global_state updated_state in
 

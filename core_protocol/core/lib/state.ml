@@ -482,15 +482,15 @@ module Account = struct
         in
 
         (* contract execution *)
-        (if receiver_account.code_hash <> "" then begin
+        if receiver_account.code_hash <> "" then begin
           let vm_res = vm_fun tx in
-          Printf.printf "[Ocaml transaction module] VM %s finished execution\n" vm_res;
+          Printf.printf "[Ocaml tx_apply] VM %s finished execution\n" vm_res;
           (* TODO: return unused gas to sender, and remove from miner *)
           Ok(new_state)
         end
         (* normal transaction *)
         else 
-          Ok(new_state))
+          Ok(new_state)
     end
 
   (* TODO: each transaction should generate a log with topics,
