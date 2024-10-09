@@ -59,6 +59,8 @@
 </div>
 
 <script>
+    let transactionData = null;
+
     document.getElementById('transaction-form').addEventListener('submit', async function (e) {
         e.preventDefault();
 
@@ -69,25 +71,33 @@
         });
 
         const data = await response.json();
+        transactionData = data;
+
         document.getElementById('signed-transaction').textContent = JSON.stringify(data, null, 2);
         document.getElementById('transaction-output').style.display = 'block';
         document.getElementById('send-transaction').disabled = false;
+    });
 
-        document.getElementById('send-transaction').addEventListener('click', async function () {
-            const nodeAddress = document.getElementById('node-address').value;
-	    const sendResponse = await fetch('/send-transaction', {
-	      method: 'POST',
-	      headers: {
-		'Content-Type': 'application/json',
-	      },
-	      body: JSON.stringify({ node_address: nodeAddress, transaction: data }),
-	    });
+    document.getElementById('send-transaction').addEventListener('click', async function () {
+        if (!transactionData) {
+            alert('Please generate a transaction first.');
+            return;
+        }
 
-	    const result = await sendResponse.json();
-	    alert(`Transaction sent! Response: ${JSON.stringify(result)}`);
+        const nodeAddress = document.getElementById('node-address').value;
+        const sendResponse = await fetch('/send-transaction', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ node_address: nodeAddress, transaction: transactionData }),
         });
+
+        const result = await sendResponse.json();
+        alert(`Transaction sent! Response: ${JSON.stringify(result)}`);
     });
 </script>
+
 
 </body>
 </html>
