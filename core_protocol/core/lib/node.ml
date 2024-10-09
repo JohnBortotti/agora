@@ -304,7 +304,7 @@ module Features = struct
                     in
                     let updated_trie = List.fold_left (fun state (block: Block.t) ->
                         Account.apply_block_transactions 
-                        node.miner_addr state block.transactions (run_vm node)
+                        block.miner state block.transactions (run_vm node)
                       )
                       reverted_state.trie
                       new_blocks 
@@ -341,7 +341,7 @@ module Features = struct
 
         let* curr_state = Lwt_mvar.take node.global_state in
         let updated_trie = Account.apply_block_transactions
-          node.miner_addr
+          received_block.miner
           curr_state.trie
           received_block.transactions
           (run_vm node)

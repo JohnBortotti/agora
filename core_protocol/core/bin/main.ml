@@ -6,12 +6,15 @@ TODO:
   - [ ] JsonRPC (batch request)
   - [ ] smart contracts
     - [ ] VM
+      - [ ] logs
     - [ ] agora lang
     - [x] deploy contracts
     - [x] contract execution
-  - [ ] Transaction fees
+  - [x] transaction fees
     - [x] transact fees
-    - [ ] rever fees on chain split
+    - [x] revert fees on chain split
+  - [ ] transaction receipt
+  - [ ] receipts trie
   - [x] configs via .env
   - [ ] tests
     - [x] pow
@@ -20,7 +23,7 @@ TODO:
     - [x] state
         - [x] RLP
         - [x] MKPTrie
-        - [x] Account
+        - [x] account
         - [ ] node
         - [ ] jsonrpc
  *)

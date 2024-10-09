@@ -60,7 +60,7 @@ module VM = struct
   let execute_vm tx callback_fn =
     let open Transaction in
     let server = create callback_fn in
-    let vm_id = spawn_vm
+    let res = spawn_vm
       server
       tx.hash
       tx.sender
@@ -72,7 +72,6 @@ module VM = struct
       tx.payload
       tx.signature
     in
-    Printf.printf "[Ocaml] VM %s finished execution\n" vm_id;
     destroy server;
-    "mocked vm return"
+    res
 end

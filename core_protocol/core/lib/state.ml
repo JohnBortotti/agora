@@ -393,101 +393,117 @@ module Account = struct
 
   let apply_transaction miner_addr state tx vm_fun =
     let open Digestif.SHA256 in
-    (* TODO: fix contract_address generation *)
+    let open Result in
+
+    let (let*) = Result.bind in
+
+    let total_cost = tx.amount + (tx.gas_limit * tx.gas_price) in
+    
+    let* sender_account = (match get_account state tx.sender with
+      | None -> Error "Sender account not found"
+      | Some acc ->
+          if acc.balance < total_cost then
+            Error "Insufficient balance to cover amount and fees"
+          else if acc.nonce <> tx.nonce then
+            Error "Invalid nonce"
+          else
+            Ok acc
+    ) in
+
+    let* receiver_account = (match get_account state tx.receiver with
+      | None -> Ok {
+          address = tx.receiver;
+          balance = 0;
+          nonce = 0;
+          storage_root = "";
+          code_hash = "";
+        }
+      | Some acc -> Ok acc
+    ) in
+
+    let* miner_account = (match get_account state miner_addr with
+      | None -> Ok {
+          address = miner_addr;
+          balance = 0;
+          nonce = 0;
+          storage_root = "";
+          code_hash = "";
+        }
+      | Some acc -> Ok acc
+    ) in
+
+    let updated_sender_account = { 
+      sender_account with
+      balance = sender_account.balance - total_cost;
+      nonce = sender_account.nonce + 1;
+    } in
+
+    let updated_receiver_account = { 
+      receiver_account with
+      balance = receiver_account.balance + tx.amount;
+    } in
+
+    let updated_miner_account = {
+      miner_account with
+      balance = miner_account.balance + (tx.gas_limit * tx.gas_price);
+
+    } in
+
+    let state_after_fees = 
+      MKPTrie.insert state sender_account.address (encode updated_sender_account)
+      |> fun f -> MKPTrie.insert f receiver_account.address (encode updated_receiver_account) 
+      |> fun f -> MKPTrie.insert f miner_account.address (encode updated_miner_account)
+    in
+
+    (* contract creation *)
     if tx.receiver = "0" then begin
+      (* TODO: fix contract_address generation *)
       let contract_address = to_hex (digest_string
         (RLP.encode(`List[`String tx.sender; `String (string_of_int tx.nonce)]))
       ) in
-      (match get_account state contract_address with
-      | None -> 
-          let contract_acc = {
-            address = contract_address;
-            balance = 0;
-            nonce = 0;
-            storage_root = "";
-            (* TODO: get the correct code, we also have the deploy code *)
-            code_hash = tx.payload;
-          } in
-          Printf.printf "contract %s created\n" contract_acc.address;
-          let new_state = MKPTrie.insert state contract_acc.address (encode contract_acc) in
-          Ok (new_state)
-      | _ -> Error "Account already exists"
-      )
+      let* contract_account = (match get_account state contract_address with
+        | Some _ -> Error "Contract account already exists"
+        | None -> Ok {
+          address = contract_address;
+          balance = 0;
+          nonce = 0;
+          storage_root = "";
+          (* TODO: get the correct code, we also have the deploy code *)
+          code_hash = tx.payload;
+      }) in
+
+      Printf.printf "contract %s created\n" contract_account.address;
+
+      let new_state = 
+        MKPTrie.insert state_after_fees contract_address (encode contract_account)
+      in
+
+      Ok(new_state)
     end
-    else   
-      match get_account state tx.sender with
-      | None -> Error "Sender account not found"
-      | Some sender_account -> 
-        if sender_account.balance < tx.amount then
-          Error "Insufficient balance"
-        else if sender_account.balance < tx.amount + (tx.gas_limit * tx.gas_price) then
-          Error "Insufficient balance to pay fees"
-        else if sender_account.nonce <> tx.nonce then
-          Error "Invalid nonce"
-        else
-          match get_account state tx.receiver with
-        | None ->
-          let new_receiver_account = {
+    else begin
+      let* receiver_account = (match get_account state tx.receiver with
+        | None -> Ok {
             address = tx.receiver;
             balance = tx.amount;
             nonce = 0;
             storage_root = "";
             code_hash = "";
-          } in
-          let updated_sender_account = { sender_account with
-            balance = sender_account.balance - tx.amount;
-            nonce = sender_account.nonce + 1;
-          } in
-          let updated_miner_account = (match get_account state miner_addr with
-            | None -> {
-                address = miner_addr;
-                balance = (tx.gas_limit * tx.gas_price);
-                nonce = 0;
-                storage_root = "";
-                code_hash = "";
-              }
-            | Some miner_acc -> 
-                { miner_acc with balance = miner_acc.balance + (tx.gas_limit * tx.gas_price) }
-            )
-          in
-          let new_state = 
-            MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) 
-            |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account)
-            |> fun f -> MKPTrie.insert f miner_addr (encode updated_miner_account) in
-          Ok (new_state)
-        | Some receiver_account ->
-          if receiver_account.code_hash <> "" then begin
-            (* TODO: pay VM used gas *)
-            let res = vm_fun tx in
-            Printf.printf "[Ocaml transaction module] VM %s finished execution\n" res;
-            Ok(state)
-          end
-          else begin
-            let updated_receiver_account = { 
-              receiver_account with balance = receiver_account.balance + tx.amount 
-            } in
-            let updated_sender_account = { sender_account with
-              balance = sender_account.balance - (tx.amount + (tx.gas_limit * tx.gas_price));
-              nonce = sender_account.nonce + 1;
-            } in
-            let updated_miner_account = (match get_account state miner_addr with
-              | None -> {
-                  address = miner_addr;
-                  balance = (tx.gas_limit * tx.gas_price);
-                  nonce = 0;
-                  storage_root = "";
-                  code_hash = "";
-                }
-              | Some miner_acc -> 
-                  { miner_acc with balance = miner_acc.balance + (tx.gas_limit * tx.gas_price) }
-            )
-            in
-            let new_state = 
-              MKPTrie.insert state receiver_account.address (encode updated_receiver_account) 
-              |> fun f -> MKPTrie.insert f sender_account.address (encode updated_sender_account)
-              |> fun f -> MKPTrie.insert f miner_addr (encode updated_miner_account) in
-            Ok (new_state)
-          end
+          }
+        | Some acc -> Ok acc
+      ) in
+      (* contract execution *)
+      if receiver_account.code_hash <> "" then begin
+        let vm_res = vm_fun tx in
+        Printf.printf "[Ocaml transaction module] VM %s finished execution\n" vm_res;
+        (* TODO: return unused gas to sender, and remove from miner *)
+        Ok(state_after_fees)
+      end
+      (* normal transaction *)
+      else 
+        Ok(state_after_fees)
+    end
+
+
 
   (* TODO: each transaction should generate a log with topics,
    this is where we use the Error of apply_transaction *)
@@ -646,7 +662,7 @@ module State = struct
     let rebuild_trie_from_root key =
       match get_from_db state key with
       | None -> 
-          print_endline ("Node with key " ^ key ^ " not found in the database.\n"); 
+          (* print_endline ("Node with key " ^ key ^ " not found in the database.\n");  *)
           state
       | Some serialized_node ->
           let trie = rebuild_trie state (serialized_node) in
