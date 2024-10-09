@@ -1,7 +1,8 @@
 use std::ops::{Add, Sub, Mul, Div, Rem};
 use std::fmt;
+use serde::Serialize;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Copy, Clone, PartialEq, Eq, Debug)]
 pub struct U256(pub u128, pub u128);
 
 impl Add for U256 {

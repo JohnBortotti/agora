@@ -83,10 +83,10 @@ pub extern "C" fn ffi_spawn_vm(
     signature,
   };
 
-  let vm_id = server.spawn_vm(transaction);
-  let vm_id_string = vm_id.to_string();
+  let res = server.spawn_vm(transaction);
+  let res_string = res.to_string();
 
-  match CString::new(vm_id_string) {
+  match CString::new(res_string) {
     Ok(c_string) => c_string.into_raw(),
     Err(_) => {
       eprintln!("Error: Failed to convert VM ID to CString");

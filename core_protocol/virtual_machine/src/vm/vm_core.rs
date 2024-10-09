@@ -1,9 +1,17 @@
 use uuid::Uuid;
-use ocaml_sys::{caml_callback2 , caml_copy_string, caml_named_value, Value};
+use ocaml_sys::{caml_callback2, caml_copy_string, caml_named_value, Value};
 use std::ffi::CString;
+use serde::Serialize;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use super::super::{jsonrpc, jsonrpc::JsonRpcResponse};
 use serde_json::json;
+use super::log::Log;
+
+#[derive(Serialize, Debug)]
+pub struct OverlayedChangeSet {
+  pub vm_id: Uuid,
+  pub logs: Vec<Log>,
+}
 
 #[derive(Debug, Clone)]
 pub struct Transaction {
@@ -29,28 +37,35 @@ impl VM {
     VM {
       id,
       rx,
-      transaction
+      transaction,
     }
   }
 
   // TODO:
-  // returns OK<_> | Err<_> :
-  //    - return writes made on chain (transactions and storage commit)
-  //    - return gas used
-  pub fn run(&self) {
+  //  - return changes made (transactions and storage)
+  //  - return logs
+  //  - return gas used
+  pub fn run(&mut self) -> Vec<OverlayedChangeSet> {
     println!("[VM] running: {}\n", self.id);
 
-    let account_address = self.transaction.sender.to_string();
+    let contract_address = self.transaction.receiver.to_string();
     let request_json = jsonrpc::serialize_request(
       "get_account",
-      json!([account_address])
+      json!([contract_address])
     );
     let response = self.json_rpc(request_json).unwrap();
-    let code = response.result.unwrap();
+    let code = response.result.unwrap()["code_hash"].take();
 
-    println!("\n[VM] code: {:?}\n", code);
+    let mut change_set = OverlayedChangeSet { vm_id: self.id, logs: vec!() };
+    change_set.logs.push(Log {
+      address: contract_address,
+      topics: vec!(),
+      data: vec!(),
+    });
 
-    println!("\n[VM] finished execution: {}\n", self.id);
+    println!("\n[VM] contract code: {:?}\n", code);
+
+    vec!(change_set)
   }
 
   pub fn json_rpc(&self, json: String) -> Result<JsonRpcResponse, String> {
@@ -58,7 +73,7 @@ impl VM {
 
     Self::call_ocaml_callback(&self.id.to_string(), &json);
 
-    match self.rx.recv_timeout(std::time::Duration::from_secs(12)) {
+    match self.rx.recv_timeout(std::time::Duration::from_secs(20)) {
       Ok(message) => {
         println!("[VM] Received message: {}", message);
         return match jsonrpc::deserialize_response(&message) {
@@ -67,7 +82,7 @@ impl VM {
         }
       }
       Err(RecvTimeoutError::Timeout) => {
-        println!("[VM] No message received within timeout. Continuing...");
+        println!("[VM] No message received within timeout.");
         return Err("message timeout".to_string())
       }
       Err(RecvTimeoutError::Disconnected) => {
@@ -75,8 +90,11 @@ impl VM {
         return Err("channel disconnected".to_string())
       }
     };
-
   }
+
+  // pub fn commitable_transaction(tx: Transaction) {
+  //
+  // }
 
   pub fn call_ocaml_callback(vm_id: &str, json: &str) {
     let vm_id_cstring = CString::new(vm_id).expect("Failed to create CString for vm_id");

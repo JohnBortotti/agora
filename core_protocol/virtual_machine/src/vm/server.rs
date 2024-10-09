@@ -18,10 +18,10 @@ impl VMServer {
     }
   }
 
-  pub fn spawn_vm(&self, transaction: Transaction) -> Uuid {
+  pub fn spawn_vm(&self, transaction: Transaction) -> String {
     let vm_id = Uuid::new_v4();
     let (tx, rx): (Sender<String>, Receiver<String>) = channel();
-    let vm = VM::new(vm_id, rx, transaction);
+    let mut vm = VM::new(vm_id, rx, transaction);
 
     {
       let mut vms = self.vm_table.write().unwrap();
@@ -30,9 +30,15 @@ impl VMServer {
 
     println!("\n[VM] spawning VM with ID: {}\n", vm_id);
 
-    vm.run();
+    let result = vm.run();
 
-    vm_id
+    match serde_json::to_string(&result) {
+      Ok(json) => json,
+      Err(e) => {
+        eprintln!("Serialization error: {}", e);
+        return "Serialization error".to_string();
+      }
+    }
   }
 
   pub fn send_data_to_vm(&self, vm_id: Uuid, json: String) {
