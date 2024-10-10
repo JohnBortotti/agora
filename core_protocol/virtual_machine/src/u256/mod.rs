@@ -2,8 +2,18 @@ use std::ops::{Add, Sub, Mul, Div, Rem};
 use std::fmt;
 use serde::Serialize;
 
-#[derive(Serialize, Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Serialize, Copy, Clone, PartialEq, Eq, Debug, PartialOrd)]
 pub struct U256(pub u128, pub u128);
+
+impl U256 {
+  pub fn zero() -> U256 {
+    U256(0, 0)
+  }
+
+  pub fn one() -> U256 {
+    U256(0, 1)
+  }
+}
 
 impl Add for U256 {
   type Output = U256;
@@ -85,8 +95,93 @@ impl fmt::Display for U256 {
   }
 }
 
-impl U256 {
-  pub fn from_u128(value: u128) -> U256 {
+impl From<u8> for U256 {
+  fn from(value: u8) -> U256 {
+    U256(0, value as u128)
+  }
+}
+
+impl From<u16> for U256 {
+  fn from(value: u16) -> U256 {
+    U256(0, value as u128)
+  }
+}
+
+impl From<u32> for U256 {
+  fn from(value: u32) -> U256 {
+    U256(0, value as u128)
+  }
+}
+
+impl From<u64> for U256 {
+  fn from(value: u64) -> U256 {
+    U256(0, value as u128)
+  }
+}
+
+impl From<u128> for U256 {
+  fn from(value: u128) -> U256 {
     U256(0, value)
+  }
+}
+
+// Implement TryFrom for signed integer types
+impl TryFrom<i8> for U256 {
+  type Error = &'static str;
+
+  fn try_from(value: i8) -> Result<U256, Self::Error> {
+    if value < 0 {
+      Err("Cannot convert negative value to U256")
+    } else {
+      Ok(U256(0, value as u128))
+    }
+  }
+}
+
+impl TryFrom<i16> for U256 {
+  type Error = &'static str;
+
+  fn try_from(value: i16) -> Result<U256, Self::Error> {
+    if value < 0 {
+      Err("Cannot convert negative value to U256")
+    } else {
+      Ok(U256(0, value as u128))
+    }
+  }
+}
+
+impl TryFrom<i32> for U256 {
+  type Error = &'static str;
+
+  fn try_from(value: i32) -> Result<U256, Self::Error> {
+    if value < 0 {
+      Err("Cannot convert negative value to U256")
+    } else {
+      Ok(U256(0, value as u128))
+    }
+  }
+}
+
+impl TryFrom<i64> for U256 {
+  type Error = &'static str;
+
+  fn try_from(value: i64) -> Result<U256, Self::Error> {
+    if value < 0 {
+      Err("Cannot convert negative value to U256")
+    } else {
+      Ok(U256(0, value as u128))
+    }
+  }
+}
+
+impl TryFrom<i128> for U256 {
+  type Error = &'static str;
+
+  fn try_from(value: i128) -> Result<U256, Self::Error> {
+    if value < 0 {
+      Err("Cannot convert negative value to U256")
+    } else {
+      Ok(U256(0, value as u128))
+    }
   }
 }
