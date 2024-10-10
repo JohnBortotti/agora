@@ -7,6 +7,7 @@ type node = {
   mining: bool Lwt_mvar.t;
   miner_addr: string;
   global_state: State.t Lwt_mvar.t;
+  contract_state: State.t Lwt_mvar.t;
   known_peers: string list Lwt_mvar.t;
 }
 

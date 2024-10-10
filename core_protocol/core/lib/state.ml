@@ -391,8 +391,9 @@ module Account = struct
           | _ -> None)
       | _ -> None
 
-  (* fix the case we sender or receiver is the same address as miner_addr *)
-  let apply_transaction miner_addr state tx vm_fun =
+  (* TODO: fix the case we sender or receiver is the same address as miner_addr *)
+  (* TODO: instead of result, return: transaction receipt *)
+  let apply_transaction miner_addr global_state contract_state tx vm_fun =
     let open Digestif.SHA256 in
     let open Result in
 
@@ -400,7 +401,7 @@ module Account = struct
 
     let total_cost = tx.amount + (tx.gas_limit * tx.gas_price) in
     
-    let* sender_account = (match get_account state tx.sender with
+    let* sender_account = (match get_account global_state tx.sender with
       | None -> Error "Sender account not found"
       | Some acc ->
           if acc.balance < total_cost then
@@ -411,7 +412,7 @@ module Account = struct
             Ok acc
     ) in
 
-    let* miner_account = (match get_account state miner_addr with
+    let* miner_account = (match get_account global_state miner_addr with
       | None -> Ok {
           address = miner_addr;
           balance = 0;
@@ -434,7 +435,7 @@ module Account = struct
     } in
 
     let state_after_fees = 
-      MKPTrie.insert state sender_account.address (encode updated_sender_account)
+      MKPTrie.insert global_state sender_account.address (encode updated_sender_account)
       |> fun f -> MKPTrie.insert f miner_account.address (encode updated_miner_account)
     in
 
@@ -442,10 +443,19 @@ module Account = struct
     if tx.receiver = "0" then 
       begin
         (* TODO: fix contract_address generation *)
+        (* TODO: 
+          - run vm and execute the contract_init()
+          - the resulting opcode is stored at contract_state db (code_hash, program)
+          - update the account with code_hash (hashed program)
+          - store the storage_root on contract_state db (hash the trie root)
+        *)
         let contract_address = to_hex (digest_string
           (RLP.encode(`List[`String tx.sender; `String (string_of_int tx.nonce)]))
         ) in
-        let* contract_account = (match get_account state contract_address with
+
+        let code_hash = (to_hex (digest_string tx.payload)) in
+
+        let* contract_account = (match get_account global_state contract_address with
           | Some _ -> Error "Contract account already exists"
           | None -> Ok {
             address = contract_address;
@@ -453,20 +463,26 @@ module Account = struct
             nonce = 0;
             storage_root = "";
             (* TODO: get the correct code, we also have the deploy code *)
-            code_hash = tx.payload;
+            code_hash = code_hash
         }) in
 
-        Printf.printf "Contract created: %s\n" contract_account.address;
+        Printf.printf "Contract account created: %s\n" contract_account.address;
 
+        (* storing the contract account on global_state: <contract_address, ...>*)
         let state_with_contract = 
           MKPTrie.insert state_after_fees contract_address (encode contract_account)
         in
 
-        Ok(state_with_contract)
+        (* storing the actual contract code on contract_state: <code_hash, full_code>*)
+        let new_contract_state =
+          MKPTrie.insert contract_state code_hash (`String tx.payload)
+        in
+
+        Ok(state_with_contract, new_contract_state)
     end
     else 
       begin
-        let* receiver_account = (match get_account state tx.receiver with
+        let* receiver_account = (match get_account global_state tx.receiver with
           | None -> Ok {
               address = tx.receiver;
               balance = tx.amount;
@@ -486,29 +502,29 @@ module Account = struct
           let vm_res = vm_fun tx in
           Printf.printf "[Ocaml tx_apply] VM %s finished execution\n" vm_res;
           (* TODO: return unused gas to sender, and remove from miner *)
-          Ok(new_state)
+          Ok(new_state, contract_state)
         end
         (* normal transaction *)
         else 
-          Ok(new_state)
+          Ok(new_state, contract_state)
     end
 
   (* TODO: each transaction should generate a log with topics,
    this is where we use the Error of apply_transaction *)
-  let rec apply_transactions miner_addr state transactions vm_fun = 
+  let rec apply_transactions miner_addr global_state contract_state transactions vm_fun = 
     match transactions with
     | tx :: rest ->
-        (match apply_transaction miner_addr state tx vm_fun with
-        | Ok new_state -> 
+        (match apply_transaction miner_addr global_state contract_state tx vm_fun with
+        | Ok (new_global_state, new_contract_state) -> 
             Printf.printf "Transaction executed ok!\n\n"; 
-            apply_transactions miner_addr new_state rest vm_fun
+            apply_transactions miner_addr new_global_state new_contract_state rest vm_fun
         | Error err -> 
             Printf.printf "Transaction execution error: %s\n" err;
-            apply_transactions miner_addr state rest vm_fun)
-    | _ -> state
+            apply_transactions miner_addr global_state contract_state rest vm_fun)
+    | _ -> (global_state, contract_state)
 
-  let apply_transaction_coinbase state tx =
-    match get_account state tx.receiver with
+  let apply_transaction_coinbase global_state tx =
+    match get_account global_state tx.receiver with
     | None ->
       let new_receiver_account = {
         address = tx.receiver;
@@ -518,7 +534,7 @@ module Account = struct
         code_hash = "";
       } in
       let new_state = 
-        MKPTrie.insert state new_receiver_account.address (encode new_receiver_account) 
+        MKPTrie.insert global_state new_receiver_account.address (encode new_receiver_account) 
       in
       Ok(new_state)
     | Some receiver_account ->
@@ -526,24 +542,25 @@ module Account = struct
         receiver_account with balance = receiver_account.balance + tx.amount
       } in
       let new_state =
-        MKPTrie.insert state receiver_account.address (encode updated_receiver_account) in
+        MKPTrie.insert global_state receiver_account.address (encode updated_receiver_account) in
       Ok(new_state)
 
-  let apply_block_transactions miner_addr state transactions vm_fun: MKPTrie.trie =
+  let apply_block_transactions 
+    miner_addr global_state contract_state transactions vm_fun =
     match transactions with
     | coinbase :: [] -> 
-      (match apply_transaction_coinbase state coinbase with
+      (match apply_transaction_coinbase global_state coinbase with
         | Ok (new_state) ->
-            new_state
+            (new_state, contract_state)
         | _ -> 
-            apply_transactions miner_addr state transactions vm_fun)
+            apply_transactions miner_addr global_state contract_state transactions vm_fun)
     | coinbase :: transactions ->
-      (match apply_transaction_coinbase state coinbase with
+      (match apply_transaction_coinbase global_state coinbase with
         | Ok (new_state) ->
-            apply_transactions miner_addr new_state transactions vm_fun
+            apply_transactions miner_addr new_state contract_state transactions vm_fun
         | _ -> 
-            apply_transactions miner_addr state transactions vm_fun)
-    | _ -> state
+            apply_transactions miner_addr global_state contract_state transactions vm_fun)
+    | _ -> (global_state, contract_state)
 end
 
 module State = struct

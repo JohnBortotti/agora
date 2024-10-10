@@ -29,5 +29,6 @@ COPY ./core /home/opam/app
 
 RUN mkdir /home/opam/db-data/
 RUN mkdir /home/opam/db-data/global-state/
+RUN mkdir /home/opam/db-data/contract-state/
 
 CMD ["dune", "exec", "bin/main.exe"]

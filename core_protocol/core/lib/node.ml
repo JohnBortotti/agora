@@ -46,6 +46,7 @@ type node = {
   mining: bool Lwt_mvar.t;
   miner_addr: string;
   global_state: State.t Lwt_mvar.t;
+  contract_state: State.t Lwt_mvar.t;
   known_peers: string list Lwt_mvar.t;
 }
 
@@ -69,6 +70,33 @@ module Features = struct
             let acc_json = Account.account_to_json decoded_acc in
             Lwt.return acc_json
         | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
+
+  let get_code node address =
+    let* global_state = Lwt_mvar.take node.global_state in
+    let* _ = Lwt_mvar.put node.global_state global_state in
+    (match State.trie_get global_state address with
+    | None -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
+    | Some trie_node ->
+        match trie_node with
+        | Leaf (_, acc_data)
+        | Branch (_, Some acc_data) ->
+            let decoded_acc = Account.decode (RLP.decode acc_data) in
+            let* contract_state = Lwt_mvar.take node.contract_state in
+            let* _ = Lwt_mvar.put node.contract_state contract_state in
+            (match State.trie_get contract_state decoded_acc.code_hash with
+              | None -> Lwt.return (`Assoc [ ("error", `String "Contract code not found") ])
+              | Some trie_node ->
+                  (match trie_node with
+                    | Leaf (_, contract_code)
+                    | Branch (_, Some contract_code) ->
+                        (match RLP.decode contract_code with 
+                          | `String code -> Lwt.return (`Assoc [ ("code", `String code) ])
+                          | _ -> failwith "Invalid RLP encoding for contract code"
+                        )
+                    | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ]))
+            )
+        | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ]))
+
 
   let get_block_headers node start_idx end_idx =
     let* chain = Lwt_mvar.take node.blockchain in
@@ -134,6 +162,12 @@ module Features = struct
   let run_vm node tx = 
     let handle_method node method_name params =
       (match method_name with
+      | "get_code" -> (
+        (match params with 
+          | Some (`List [ `String address ]) ->
+              get_code node address
+          | _ -> Lwt.return (create_error (-32602) "Invalid params" None))
+      )
       | "get_headers" -> (
         (match params with
           | Some (`List [ `Int start_idx; `Int end_idx ]) ->
@@ -296,27 +330,41 @@ module Features = struct
                       transaction_pool in
                     let* _ = Lwt_mvar.put node.transaction_pool updated_tx_pool in
 
-                    let* curr_state = Lwt_mvar.take node.global_state in
-                    let* _ = Lwt_mvar.put node.global_state curr_state in
+                    let* curr_global_state = Lwt_mvar.take node.global_state in
+                    let* _ = Lwt_mvar.put node.global_state curr_global_state in
+
+                    let* curr_contract_state = Lwt_mvar.take node.contract_state in
+                    let* _ = Lwt_mvar.put node.contract_state curr_contract_state in
 
                     let reverted_state = State.revert_to_hash 
-                      curr_state 
+                      curr_global_state 
                       common_block.state_root 
                     in
 
-                    let updated_trie = List.fold_left (fun state (block: Block.t) ->
+                    let (updated_global_trie, updated_contract_trie) =
+                      List.fold_left (fun (global_state, contract_state) (block: Block.t) ->
                         Account.apply_block_transactions 
-                        block.miner state block.transactions (run_vm node)
+                        block.miner global_state contract_state block.transactions (run_vm node)
                       )
-                      reverted_state.trie
+                      (reverted_state.trie, curr_contract_state.trie)
                       new_blocks 
                     in
 
-                    let updated_state = {reverted_state with trie=updated_trie} in
-                    State.flush_to_db updated_state;
-
+                    let updated_global_state = {
+                      reverted_state with
+                      trie=updated_global_trie
+                    } in
+                    State.flush_to_db updated_global_state;
                     let* _ = Lwt_mvar.take node.global_state in
-                    let* _ = Lwt_mvar.put node.global_state updated_state in
+                    let* _ = Lwt_mvar.put node.global_state updated_global_state in
+
+                    let updated_contract_state = { 
+                      curr_contract_state with
+                      trie=updated_contract_trie
+                    } in
+                    State.flush_to_db updated_contract_state;
+                    let* _ = Lwt_mvar.take node.contract_state in
+                    let* _ = Lwt_mvar.put node.contract_state updated_contract_state in
                     
                     Lwt.return_true
                   | Error msg ->
@@ -343,21 +391,35 @@ module Features = struct
         ) transaction_pool in
         let* _ = Lwt_mvar.put node.transaction_pool updated_transaction_pool in
 
-        let* curr_state = Lwt_mvar.take node.global_state in
-        let* _ = Lwt_mvar.put node.global_state curr_state in
+        let* curr_global_state = Lwt_mvar.take node.global_state in
+        let* _ = Lwt_mvar.put node.global_state curr_global_state in
 
-        let updated_trie = Account.apply_block_transactions
+        let* curr_contract_state = Lwt_mvar.take node.contract_state in
+        let* _ = Lwt_mvar.put node.contract_state curr_contract_state in
+
+        let (updated_state_trie, updated_contract_trie) = Account.apply_block_transactions
           received_block.miner
-          curr_state.trie
+          curr_global_state.trie
+          curr_contract_state.trie
           received_block.transactions
           (run_vm node)
         in  
 
-        let* curr_state = Lwt_mvar.take node.global_state in
-        let updated_state = { curr_state with trie=updated_trie } in
+        let updated_global_state = { 
+          curr_global_state with
+          trie=updated_state_trie
+        } in
+        State.flush_to_db updated_global_state;
+        let* _ = Lwt_mvar.take node.global_state in
+        let* _ = Lwt_mvar.put node.global_state updated_global_state in
 
-        let _ = State.flush_to_db updated_state in
-        let* _ = Lwt_mvar.put node.global_state updated_state in
+        let updated_contract_state = { 
+          curr_contract_state with
+          trie=updated_contract_trie
+        } in
+        State.flush_to_db updated_contract_state;
+        let* _ = Lwt_mvar.take node.contract_state in
+        let* _ = Lwt_mvar.put node.contract_state updated_contract_state in
 
         let new_chain = received_block :: curr_chain in
         let* _ = Lwt_mvar.take node.blockchain in
@@ -389,7 +451,8 @@ module Features = struct
     let* _ = Lwt_unix.sleep 3.0 in
     validate_transaction_pool node
 
-  let mine_block node curr_state transactions (prev_block: Block.t) difficulty miner_addr  =
+  let mine_block 
+    node global_state contract_state transactions (prev_block: Block.t) difficulty miner_addr  =
     let open Block in
     let coinbase_tx: Transaction.t = {
       hash = "";
@@ -403,13 +466,14 @@ module Features = struct
       signature = "";
     } in
 
-    let updated_state = Account.apply_block_transactions 
+    let (updated_global_state, updated_contract_state) = Account.apply_block_transactions 
       node.miner_addr
-      curr_state
+      global_state
+      contract_state
       (coinbase_tx :: transactions)
       (run_vm node)
     in
-    let state_root = MKPTrie.hash updated_state in
+    let state_root = MKPTrie.hash updated_global_state in
 
     let rec mine nonce =
       let* _ = Lwt.pause () in
@@ -427,7 +491,10 @@ module Features = struct
       let candidate_hash = hash_block { candidate_block with hash = "" } in 
       if is_valid_pow candidate_hash difficulty then 
         (print_endline ("mined block: " ^ (string_of_int candidate_block.index) ^ "\n");
-        Lwt.return (updated_state, { candidate_block with hash = candidate_hash }))
+        Lwt.return (
+          (updated_global_state, updated_contract_state),
+          { candidate_block with hash = candidate_hash })
+        )
       else
         mine (nonce + 1)
       in mine 0
@@ -463,12 +530,17 @@ module Features = struct
         let* curr_global_state = Lwt_mvar.take node.global_state in
         let* _ = Lwt_mvar.put node.global_state curr_global_state in
 
+        let* curr_contract_state = Lwt_mvar.take node.contract_state in
+        let* _ = Lwt_mvar.put node.contract_state curr_contract_state in
+
         let prev_block = List.hd curr_blockchain in
         let difficulty = Block.calculate_difficulty prev_block in
         let miner_addr = node.miner_addr in
 
-        let* (new_state_trie, mined_block) = mine_block node
-        curr_global_state.trie transactions_to_mine prev_block difficulty miner_addr in
+        let* ((new_state_trie, new_contract_trie), mined_block) = mine_block node
+          curr_global_state.trie curr_contract_state.trie 
+          transactions_to_mine prev_block difficulty miner_addr
+        in
 
         let new_chain = mined_block :: curr_blockchain in
         let* _ = Lwt_mvar.take node.blockchain in
@@ -478,6 +550,11 @@ module Features = struct
         let new_state = { curr_global_state with trie=new_state_trie } in
         let _ = State.flush_to_db new_state in
         let* _ = Lwt_mvar.put node.global_state new_state in
+
+        let* _ = Lwt_mvar.take node.contract_state in
+        let new_state = { curr_contract_state with trie=new_contract_trie } in
+        let _ = State.flush_to_db new_state in
+        let* _ = Lwt_mvar.put node.contract_state new_state in
 
         let* peers_list = Lwt_mvar.take node.known_peers in
         let* _ = Lwt_mvar.put node.known_peers peers_list in
@@ -590,6 +667,9 @@ let new_node node_addr miner_addr known_peers =
     global_state = 
       Lwt_mvar.create 
       (State.init_state "/home/opam/db-data/global-state" (Unsigned.Size_t.of_int 1024));
+    contract_state = 
+      Lwt_mvar.create 
+      (State.init_state "/home/opam/db-data/contract-state" (Unsigned.Size_t.of_int 1024));
     known_peers = Lwt_mvar.create known_peers;
   } in
   node
@@ -602,4 +682,3 @@ let run_node node =
       Transport.http_server node;
     ] in
   Lwt_main.run main_loop
-
