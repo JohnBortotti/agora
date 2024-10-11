@@ -66,33 +66,34 @@ module Features = struct
     Lwt.return_unit
 
   let get_account node address =
-    let* _ = Lwt_mutex.lock node.global_state_mutex in
+    let open Lwt.Infix in
+    (* let* _ = Lwt_mutex.lock node.global_state_mutex in *)
     let global_state = !(node.global_state) in
-    Lwt_mutex.unlock node.global_state_mutex;
-    match State.get global_state address with
-    | None -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
-    | Some acc_data ->
-        let decoded_acc = Account.decode (RLP.decode acc_data) in
-        let acc_json = Account.account_to_json decoded_acc in
-        Lwt.return acc_json
+    match Account.get_account global_state address with
+      | Some acc_data ->
+          let acc_json = Account.account_to_json acc_data in
+          Lwt.return acc_json
+      | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
 
   let get_code node address =
-    let* () = Lwt_mutex.lock node.global_state_mutex in
+    let open Lwt.Infix in
+    (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
     let global_state = !(node.global_state) in
-    Lwt_mutex.unlock node.global_state_mutex;
-    match State.get global_state address with
-    | None -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
+    (* Lwt_mutex.unlock node.global_state_mutex; *)
+    match Account.get_account global_state address with
     | Some contract_acc_data ->
-        let decoded_acc = Account.decode (RLP.decode contract_acc_data) in
-        let* () = Lwt_mutex.lock node.contract_state_mutex in
+        (
+        (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
         let contract_state = !(node.contract_state) in
         Lwt_mutex.unlock node.contract_state_mutex;
-        (match State.get contract_state decoded_acc.code_hash with
+        match State.get contract_state contract_acc_data.code_hash with
         | None -> Lwt.return (`Assoc [ ("error", `String "Contract code not found") ])
         | Some code -> (
-            match RLP.decode code with
+            (match RLP.decode code with
             | `String code -> Lwt.return (`Assoc [ ("code", `String code) ])
-            | _ -> failwith "Invalid RLP encoding for contract code"))
+            | _ -> failwith "Invalid RLP encoding for contract code")))
+    | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
+    
 
   let get_block_headers node start_idx end_idx =
     let* () = Lwt_mutex.lock node.blockchain_mutex in
@@ -335,34 +336,34 @@ module Features = struct
                     node.transaction_pool := updated_tx_pool;
                     Lwt_mutex.unlock node.transaction_pool_mutex;
 
-                    let* () = Lwt_mutex.lock node.global_state_mutex in
-                    let curr_global_state = !(node.global_state) in
-                    Lwt_mutex.unlock node.global_state_mutex;
+                    (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
+                    (* let curr_global_state = !(node.global_state) in *)
+                    (* Lwt_mutex.unlock node.global_state_mutex; *)
 
-                    let* () = Lwt_mutex.lock node.contract_state_mutex in
-                    let curr_contract_state = !(node.contract_state) in
-                    Lwt_mutex.unlock node.contract_state_mutex;
+                    (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
+                    (* let curr_contract_state = !(node.contract_state) in *)
+                    (* Lwt_mutex.unlock node.contract_state_mutex; *)
 
                     let reverted_state = State.revert_to_hash 
-                      curr_global_state 
+                      !(node.global_state) 
                       common_block.state_root 
                     in
 
-                    let (updated_global_state, updated_contract_state) =
-                      List.fold_left (fun (global_state, contract_state) (block: Block.t) ->
-                        Account.apply_block_transactions 
-                        block.miner global_state contract_state block.transactions (run_vm node)
-                      )
-                      (reverted_state, curr_contract_state)
-                      new_blocks 
-                    in
+                    let open Lwt.Infix in
 
-                    let* () = Lwt_mutex.lock node.global_state_mutex in
-                    node.global_state := updated_global_state;
-                    Lwt_mutex.unlock node.global_state_mutex;
+                    let* receipts_list = Lwt_list.map_p (fun (block: Block.t) ->
+                      let receipts = Account.apply_block_transactions 
+                      block.miner !(node.global_state) !(node.contract_state) 
+                      block.transactions (run_vm node) in
+                      Lwt.return receipts
+                    ) new_blocks in
 
-                    let* () = Lwt_mutex.lock node.contract_state_mutex in
-                    node.contract_state := updated_contract_state;
+                    (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
+                    (* node.global_state := updated_global_state; *)
+                    (* Lwt_mutex.unlock node.global_state_mutex; *)
+
+                    (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
+                    (* node.contract_state := updated_contract_state; *)
                     Lwt_mutex.unlock node.contract_state_mutex;
                     
                     Lwt.return_true
@@ -392,29 +393,18 @@ module Features = struct
         node.transaction_pool := updated_transaction_pool;
         Lwt_mutex.unlock node.transaction_pool_mutex;
 
-        let* () = Lwt_mutex.lock node.global_state_mutex in
-        let curr_global_state = !(node.global_state) in
-        Lwt_mutex.unlock node.global_state_mutex;
+        (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
+        (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
 
-        let* () = Lwt_mutex.lock node.contract_state_mutex in
-        let curr_contract_state = !(node.contract_state) in
-        Lwt_mutex.unlock node.contract_state_mutex;
-
-        let (updated_global_state, updated_contract_state) = Account.apply_block_transactions
+        let _ = Account.apply_block_transactions
           received_block.miner
-          curr_global_state
-          curr_contract_state
+          !(node.global_state)
+          !(node.contract_state)
           received_block.transactions
-          (run_vm node)
-        in  
+          (run_vm node) in
 
-        let* () = Lwt_mutex.lock node.global_state_mutex in
-        node.global_state := updated_global_state;
-        Lwt_mutex.unlock node.global_state_mutex;
-
-        let* () = Lwt_mutex.lock node.contract_state_mutex in
-        node.contract_state := updated_contract_state;
-        Lwt_mutex.unlock node.contract_state_mutex;
+        (* Lwt_mutex.unlock node.global_state_mutex; *)
+        (* Lwt_mutex.unlock node.contract_state_mutex; *)
 
         let* () = Lwt_mutex.lock node.blockchain_mutex in
         node.blockchain := received_block :: curr_chain;
@@ -451,7 +441,7 @@ module Features = struct
     validate_transaction_pool node
 
   let mine_block 
-    node (global_state: State.t) (contract_state: State.t) transactions (prev_block: Block.t) difficulty miner_addr  =
+    node transactions (prev_block: Block.t) difficulty miner_addr  =
     let open Block in
     let coinbase_tx: Transaction.t = {
       hash = "";
@@ -465,21 +455,33 @@ module Features = struct
       signature = "";
     } in
 
-    (* let (updated_global_state, updated_contract_state) = Account.apply_block_transactions  *)
-    (*   node.miner_addr *)
-    (*   global_state *)
-    (*   contract_state *)
-    (*   (coinbase_tx :: transactions) *)
-    (*   (run_vm node) *)
-    (* in *)
-    (* let state_root = updated_global_state.root_hash in *)
+    (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
+    (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
 
-    let updated_global_state = global_state in
-    let updated_contract_state = contract_state in
-    let state_root = "alo" in
+    let global_state = !(node.global_state) in
+    let contract_state = !(node.contract_state) in
 
-    Printf.printf "global_state_root: %s\n" updated_global_state.root_hash;
-    Printf.printf "contract_state_root: %s\n" updated_contract_state.root_hash;
+    let _ = Account.apply_block_transactions 
+      node.miner_addr
+      global_state
+      contract_state
+      (coinbase_tx :: transactions)
+      (run_vm node)
+    in
+
+    let open Digestif.SHA256 in
+
+    (* let state_root = global_state.root_hash in *)
+    let root_key = (to_hex (digest_string "root_hash")) in
+    (match Database.get global_state.db root_key with
+      | None -> Printf.printf "global state root not found\n"
+      | Some root_on_db -> Printf.printf "global_state_root: %s\n" root_on_db
+    );
+
+    let state_root = "0" in
+
+    (* Lwt_mutex.unlock node.global_state_mutex; *)
+    (* Lwt_mutex.unlock node.contract_state_mutex; *)
 
     let rec mine nonce =
       let* _ = Lwt.pause () in
@@ -497,87 +499,67 @@ module Features = struct
       let candidate_hash = hash_block { candidate_block with hash = "" } in 
       if is_valid_pow candidate_hash difficulty then 
         (print_endline ("mined block: " ^ (string_of_int candidate_block.index) ^ "\n");
-        Lwt.return (
-          (updated_global_state, updated_contract_state),
-          { candidate_block with hash = candidate_hash })
-        )
+        Lwt.return ({ candidate_block with hash = candidate_hash }))
       else
         mine (nonce + 1)
       in mine 0
 
   let mining_routine node =
-  let threshold = 0 in
-  Random.init (int_of_string (Sys.getenv "ENTROPY_POOL"));
-  let rec aux () =
-    let time_delay = float_of_int ((Random.int 2) + 0) in
-    let* () = Lwt_mutex.lock node.mining_mutex in
-    let mining = !(node.mining) in
-    Lwt_mutex.unlock node.mining_mutex;
-    if mining then
-      loop time_delay ()
-    else
-      let* () = Lwt_unix.sleep time_delay in
-      aux ()
-  and
-  loop delay () =
-    let* () = Lwt_unix.sleep delay in
+    let threshold = 0 in
+    Random.init (int_of_string (Sys.getenv "ENTROPY_POOL"));
+    let rec aux () =
+      let time_delay = float_of_int ((Random.int 2) + 0) in
+      let* () = Lwt_mutex.lock node.mining_mutex in
+      let mining = !(node.mining) in
+      Lwt_mutex.unlock node.mining_mutex;
+      if mining then
+        loop time_delay ()
+      else
+        let* () = Lwt_unix.sleep time_delay in
+        aux ()
+    and
+    loop delay () =
+      let* () = Lwt_unix.sleep delay in
 
-    let* () = Lwt_mutex.lock node.transaction_pool_mutex in
-    let curr_pool = !(node.transaction_pool) in
-    let validated_transactions, remaining_transactions =
-      List.partition (fun (_, verified) -> verified) curr_pool in
-    node.transaction_pool := remaining_transactions;
-    Lwt_mutex.unlock node.transaction_pool_mutex;
+      let* () = Lwt_mutex.lock node.transaction_pool_mutex in
+      let curr_pool = !(node.transaction_pool) in
+      let validated_transactions, remaining_transactions =
+        List.partition (fun (_, verified) -> verified) curr_pool in
+      node.transaction_pool := remaining_transactions;
+      Lwt_mutex.unlock node.transaction_pool_mutex;
 
-    if List.length validated_transactions >= threshold then (
-      let transactions_to_mine = List.map fst validated_transactions in
+      if List.length validated_transactions >= threshold then (
+        let transactions_to_mine = List.map fst validated_transactions in
 
-      let* () = Lwt_mutex.lock node.blockchain_mutex in
-      let curr_blockchain = !(node.blockchain) in
-      Lwt_mutex.unlock node.blockchain_mutex;
+        (* perform operations *)
+        let curr_blockchain = !(node.blockchain) in
 
-      let* () = Lwt_mutex.lock node.global_state_mutex in
-      let curr_global_state = !(node.global_state) in
-      Lwt_mutex.unlock node.global_state_mutex;
+        let prev_block = List.hd curr_blockchain in
+        let difficulty = Block.calculate_difficulty prev_block in
+        let miner_addr = node.miner_addr in
 
-      let* () = Lwt_mutex.lock node.contract_state_mutex in
-      let curr_contract_state = !(node.contract_state) in
-      Lwt_mutex.unlock node.contract_state_mutex;
+        Printf.printf "started mine_block function\n";
 
-      let prev_block = List.hd curr_blockchain in
-      let difficulty = Block.calculate_difficulty prev_block in
-      let miner_addr = node.miner_addr in
+        let* mined_block = mine_block 
+          node 
+          transactions_to_mine prev_block difficulty miner_addr
+        in
 
-      Printf.printf "started mine_block function\n";
+        Printf.printf "finished mine_block function\n";
 
-      let* ((new_global_state, new_contract_state), mined_block) = mine_block 
-        node curr_global_state curr_contract_state transactions_to_mine prev_block difficulty miner_addr
-      in
+        node.blockchain := mined_block :: curr_blockchain;
 
-      Printf.printf "finished mine_block function\n";
-
-      let* () = Lwt_mutex.lock node.blockchain_mutex in
-      node.blockchain := mined_block :: curr_blockchain;
-      Lwt_mutex.unlock node.blockchain_mutex;
-
-      let* () = Lwt_mutex.lock node.global_state_mutex in
-      node.global_state := new_global_state;
-      Lwt_mutex.unlock node.global_state_mutex;
-
-      let* () = Lwt_mutex.lock node.contract_state_mutex in
-      node.contract_state := new_contract_state;
-      Lwt_mutex.unlock node.contract_state_mutex;
-
-      let* () = Lwt_mutex.lock node.known_peers_mutex in
-      let peers_list = !(node.known_peers) in
-      Lwt_mutex.unlock node.known_peers_mutex;
-      (* let* () = broadcast_block peers_list mined_block in *)
-      aux ()
-    ) else (
-      aux ()
-    )
-  in
-  aux ()
+        let* () = Lwt_mutex.lock node.known_peers_mutex in
+        let peers_list = !(node.known_peers) in
+        Lwt_mutex.unlock node.known_peers_mutex;
+        
+        (* let* () = broadcast_block peers_list mined_block in *)
+        aux ()
+      ) else (
+        aux ()
+      )
+    in
+    aux ()
   
 end
 

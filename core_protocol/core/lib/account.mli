@@ -1,4 +1,5 @@
 open State 
+open Transaction
 
 module Account : sig
   type t = {
@@ -13,6 +14,8 @@ module Account : sig
   val account_to_json: t -> Yojson.Basic.t
   val encode: t -> RLP.t
   val decode: RLP.t -> t
+  val get_account: State.t -> string -> t option
 
-  val apply_block_transactions: string -> State.t -> State.t -> Transaction.t list -> (Transaction.t -> string) -> (State.t * State.t)
+  val apply_block_transactions: string -> State.t -> State.t -> Transaction.t list -> (Transaction.t -> string) -> receipt list
+
 end

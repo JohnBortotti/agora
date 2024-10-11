@@ -10,19 +10,19 @@ type t = {
   signature: string;
 }
 
-(* type log = { *)
-(*   address: string; *)
-(*   topics: string list; *)
-(*   data: string; *)
-(* } *)
-(* type transaction_result = Success | Failure *)
-(* type receipt = { *)
-(*   result: transaction_result; *)
-(*   gas_used: int; *)
-(*   logs: log list; *)
-(*   bloom_filter: string; *)
-(*   contract_address: string option; *)
-(* } *)
+type log = {
+  address: string;
+  topics: string list;
+  data: string;
+}
+type transaction_result = Success | Failure
+type receipt = {
+  result: transaction_result;
+  gas_used: int;
+  logs: log list;
+  bloom_filter: string;
+  contract_address: string option;
+}
 
 val hash_transaction: t -> string
 val validate_transaction: t -> bool

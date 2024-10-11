@@ -331,7 +331,7 @@ end
 module State = struct
   type t = {
     db: Database.t;
-    root_hash: string;
+    mutable root_hash: string;
   }
 
   let init_state db_path mem_size =
@@ -561,14 +561,15 @@ module State = struct
           
   let get state key =
     let key_nibbles = MKPTrie.string_to_nibbles key in
-    match state.root_hash with
+    let curr_root_hash = state.root_hash in
+    match curr_root_hash with
     | "" | "0" -> None
     | root_hash ->
         match get_from_db state root_hash with
         | None -> None
         | Some serialized_root ->
             let root_node = parse_node state (RLP.encode serialized_root) in
-            trie_get state root_node key_nibbles
+            (trie_get state root_node key_nibbles)
 
   let set state key value =
     let value_rlp = RLP.encode value in
@@ -583,11 +584,13 @@ module State = struct
     in
     let new_root_node = trie_set state root_node_opt key_nibbles value_rlp in
     let new_root_hash = write_node_to_db state new_root_node in
-    { state with root_hash = new_root_hash }
-
+    Database.write state.db (to_hex (digest_string "root_hash")) (new_root_hash);
+    ()
+    
   let revert_to_hash state hash =
-    match Database.get state.db hash with
-    | Some _ -> { state with root_hash = hash }
-    | None -> failwith ("Hash not found in database: " ^ hash) 
-
+    let result = match Database.get state.db hash with
+      | Some _ -> { state with root_hash = hash }
+      | None -> failwith ("Hash not found in database: " ^ hash) 
+  in 
+  ()
 end

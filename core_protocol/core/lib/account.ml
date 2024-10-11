@@ -41,44 +41,60 @@ module Account = struct
         { address; balance = int_of_string balance; nonce = int_of_string nonce; storage_root; code_hash }
     | _ -> failwith "Invalid RLP encoding for account"
 
-    let get_account state address =
-      match State.get state address with
-      | None -> None
-      | Some acc_data -> Some (decode (RLP.decode acc_data))
+  let get_account state address: t option =
+    match State.get state address with
+    | None -> None
+    | Some acc_data -> Some (decode (RLP.decode acc_data))
 
-    (* TODO: fix the case we sender or receiver is the same address as miner_addr *)
-    (* TODO: instead of result, return: transaction receipt *)
-    (* TODO: pass the entire State.t, not just the trie, so the function can apply 
-       changes direct on serialized state
-      *)
-    let apply_transaction miner_addr global_state contract_state tx vm_fun =
-      let open Digestif.SHA256 in
-      let open Result in
+  (* TODO: fix the case we sender or receiver is the same address as miner_addr *)
+  (* TODO: instead of result, return: transaction receipt *)
+  (* TODO: pass the entire State.t, not just the trie, so the function can apply 
+      changes direct on serialized state
+    *)
+  let apply_transaction miner_addr global_state contract_state tx vm_fun: receipt =
+    let open Digestif.SHA256 in
 
-      let (let*) = Result.bind in
+    let total_cost = tx.amount + (tx.gas_limit * tx.gas_price) in
 
-      let total_cost = tx.amount + (tx.gas_limit * tx.gas_price) in
-      
-      let* sender_account = (match get_account global_state tx.sender with
-        | None -> Error "Sender account not found"
-        | Some acc ->
-            if acc.balance < total_cost then
-              Error "Insufficient balance to cover amount and fees"
-            else if acc.nonce <> tx.nonce then
-              Error "Invalid nonce"
-            else
-              Ok acc
-      ) in
+    let mocked_receipt_ok = {
+      result = Success;
+      gas_used = 0;
+      logs = [];
+      bloom_filter = "";
+      contract_address = None;
+    } in
 
-      let* miner_account = (match get_account global_state miner_addr with
-        | None -> Ok {
-            address = miner_addr;
-            balance = 0;
-            nonce = 0;
-            storage_root = "";
-            code_hash = "";
-          }
-        | Some acc -> Ok acc
+    let mocked_receipt_err = {
+      result = Failure;
+      gas_used = 0;
+      logs = [];
+      bloom_filter = "";
+      contract_address = None;
+    } in
+
+    (* let* sender_account = (match get_account global_state tx.sender with
+      | None -> Error "Sender account not found"
+      | Some acc ->
+        if acc.balance < total_cost then
+          Error "Insufficient balance to cover amount and fees"
+        else if acc.nonce <> tx.nonce then
+          Error "Invalid nonce"
+        else
+          Ok acc
+    ) in *)
+
+    match get_account global_state tx.sender with
+    | None -> mocked_receipt_err
+    | Some sender_account ->
+      let miner_account = (match get_account global_state miner_addr with
+        | None -> {
+          address = miner_addr;
+          balance = 0;
+          nonce = 0;
+          storage_root = "";
+          code_hash = "";
+        }
+        | Some acc -> acc
       ) in
 
       let updated_sender_account = { 
@@ -91,11 +107,10 @@ module Account = struct
         miner_account with
         balance = miner_account.balance + (tx.gas_limit * tx.gas_price);
       } in
-
-      let state_after_fees = 
-        State.set global_state sender_account.address (encode updated_sender_account)
-        |> fun f -> State.set f miner_account.address (encode updated_miner_account)
-      in
+      
+      (* state after fees *)
+      State.set global_state sender_account.address (encode updated_sender_account);
+      State.set global_state miner_account.address (encode updated_miner_account);
 
       (* contract creation *)
       if tx.receiver = "0" then 
@@ -113,110 +128,100 @@ module Account = struct
 
           let code_hash = (to_hex (digest_string tx.payload)) in
 
-          let* contract_account = (match get_account global_state contract_address with
-            | Some _ -> Error "Contract account already exists"
-            | None -> Ok {
-              address = contract_address;
-              balance = tx.amount;
-              nonce = 0;
-              storage_root = "";
-              (* TODO: get the correct code, we also have the deploy code *)
-              code_hash = code_hash
-          }) in
+          (match get_account global_state contract_address with 
+            | Some _ -> mocked_receipt_err
+            | None ->
+              let contract_account = {
+                address = contract_address;
+                balance = tx.amount;
+                nonce = 0;
+                storage_root = "";
+                code_hash = code_hash;
+              } in
 
-          Printf.printf "Contract account created: %s\n" contract_account.address;
+              Printf.printf "Contract account created: %s\n" contract_account.address;
 
-          (* storing the contract account on global_state: <contract_address, ...>*)
-          let state_with_contract = 
-            State.set state_after_fees contract_address (encode contract_account)
-          in
+              (* storing the contract account on global_state: <contract_address, ...>*)
+              State.set global_state contract_address (encode contract_account);
 
-          (* storing the actual contract code on contract_state: <code_hash, full_code>*)
-          let new_contract_state =
-            State.set contract_state code_hash (`String tx.payload)
-          in
+              (* storing the actual contract code on contract_state: <code_hash, full_code>*)
+              State.set contract_state code_hash (`String tx.payload);
 
-          Ok(state_with_contract, new_contract_state)
+              mocked_receipt_ok)
       end
       else 
         begin
-          let* receiver_account = (match get_account global_state tx.receiver with
-            | None -> Ok {
+          let receiver_account = 
+            match get_account global_state tx.receiver with
+            | None -> {
                 address = tx.receiver;
                 balance = tx.amount;
                 nonce = 0;
                 storage_root = "";
                 code_hash = "";
               }
-            | Some acc -> Ok acc
-          ) in
-
-          let new_state = 
-            State.set state_after_fees receiver_account.address (encode receiver_account)
+            | Some acc -> acc
           in
+
+          (* send amount to receiver *)
+          State.set global_state receiver_account.address (encode receiver_account);
 
           (* contract execution *)
           if receiver_account.code_hash <> "" then begin
             let vm_res = vm_fun tx in
             Printf.printf "[Ocaml tx_apply] VM %s finished execution\n" vm_res;
             (* TODO: return unused gas to sender, and remove from miner *)
-            Ok(new_state, contract_state)
+            mocked_receipt_ok
           end
           (* normal transaction *)
           else 
-            Ok(new_state, contract_state)
+            mocked_receipt_ok
       end
 
-    (* TODO: each transaction should generate a log with topics,
-     this is where we use the Error of apply_transaction *)
-    let rec apply_transactions miner_addr global_state contract_state transactions vm_fun = 
-      match transactions with
-      | tx :: rest ->
-          (match apply_transaction miner_addr global_state contract_state tx vm_fun with
-          | Ok (new_global_state, new_contract_state) -> 
-              Printf.printf "Transaction executed ok!\n\n"; 
-              apply_transactions miner_addr new_global_state new_contract_state rest vm_fun
-          | Error err -> 
-              Printf.printf "Transaction execution error: %s\n" err;
-              apply_transactions miner_addr global_state contract_state rest vm_fun)
-      | _ -> (global_state, contract_state)
+  (* TODO: each transaction should generate a log with topics,
+    this is where we use the Error of apply_transaction *)
+  let rec apply_transactions miner_addr global_state contract_state transactions vm_fun: receipt list = 
+    match transactions with
+    | tx :: rest ->
+        let receipt = apply_transaction miner_addr global_state contract_state tx vm_fun in
+        receipt :: apply_transactions miner_addr global_state contract_state rest vm_fun
+    | [] -> []
 
-    let apply_transaction_coinbase global_state tx =
-      match get_account global_state tx.receiver with
-      | None ->
-        let new_receiver_account = {
-          address = tx.receiver;
-          balance = tx.amount;
-          nonce = 0;
-          storage_root = "";
-          code_hash = "";
-        } in
-        let new_state = 
-          State.set global_state new_receiver_account.address (encode new_receiver_account) 
-        in
-        Ok(new_state)
-      | Some receiver_account ->
-        let updated_receiver_account = {
-          receiver_account with balance = receiver_account.balance + tx.amount
-        } in
-        let new_state =
-          State.set global_state receiver_account.address (encode updated_receiver_account) in
-        Ok(new_state)
+  let apply_transaction_coinbase global_state tx =
+    let mocked_receipt = {
+      result = Success;
+      gas_used = 0;
+      logs = [];
+      bloom_filter = "";
+      contract_address = None;
+    } in
+    match get_account global_state tx.receiver with
+    | None ->
+      let new_receiver_account = {
+        address = tx.receiver;
+        balance = tx.amount;
+        nonce = 0;
+        storage_root = "";
+        code_hash = "";
+      } in
+      State.set global_state new_receiver_account.address (encode new_receiver_account);
+      mocked_receipt
+    | Some receiver_account ->
+      let updated_receiver_account = {
+        receiver_account with balance = receiver_account.balance + tx.amount
+      } in
+      State.set global_state receiver_account.address (encode updated_receiver_account);
+      mocked_receipt
 
   let apply_block_transactions 
     miner_addr global_state contract_state transactions vm_fun =
     match transactions with
     | coinbase :: [] -> 
-      (match apply_transaction_coinbase global_state coinbase with
-        | Ok (new_state) ->
-            (new_state, contract_state)
-        | _ -> 
-            apply_transactions miner_addr global_state contract_state transactions vm_fun)
+        let coinbase_receipt = apply_transaction_coinbase global_state coinbase in
+        coinbase_receipt :: []
     | coinbase :: transactions ->
-      (match apply_transaction_coinbase global_state coinbase with
-        | Ok (new_state) ->
-            apply_transactions miner_addr new_state contract_state transactions vm_fun
-        | _ -> 
-            apply_transactions miner_addr global_state contract_state transactions vm_fun)
-    | _ -> (global_state, contract_state)
+        let coinbase_receipt = apply_transaction_coinbase global_state coinbase in
+        let tx_receipts = apply_transactions miner_addr global_state contract_state transactions vm_fun in
+        coinbase_receipt :: tx_receipts
+    | _ -> []
 end

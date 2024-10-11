@@ -26,13 +26,13 @@ end
 module State : sig
   type t = {
     db: Database.t;
-    root_hash: string;
+    mutable root_hash: string;
   }
 
   val init_state: string -> Unsigned.Size_t.t -> t
   (* TODO: add param f: function to decode result*)
   val get: t -> string -> string option
   (* TODO: add param f: function to encode*)
-  val set: t -> string -> RLP.t -> t
-  val revert_to_hash: t -> string -> t
+  val set: t -> string -> RLP.t -> unit
+  val revert_to_hash: t -> string -> unit
 end

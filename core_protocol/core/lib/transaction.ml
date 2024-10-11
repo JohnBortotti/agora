@@ -14,6 +14,22 @@ type t = {
   signature: string;
 }
 
+type log = {
+  address: string;
+  topics: string list;
+  data: string;
+}
+
+type transaction_result = Success | Failure
+
+type receipt = {
+  result: transaction_result;
+  gas_used: int;
+  logs: log list;
+  bloom_filter: string;
+  contract_address: string option;
+}
+
 let hash_transaction tx =
   let data_to_hash =
     tx.sender ^ tx.receiver ^ string_of_int tx.amount
