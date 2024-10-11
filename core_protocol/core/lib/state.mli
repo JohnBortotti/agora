@@ -23,33 +23,16 @@ module MKPTrie : sig
   val serialize: node -> string
 end
 
-module Account : sig
-  type t = {
-    address: string;
-    balance: int;
-    nonce: int;
-    storage_root: string;
-    code_hash: string;
-  }
-
-  val string_of_account: t -> string
-  val account_to_json: t -> Yojson.Basic.t
-  val encode: t -> RLP.t
-  val decode: RLP.t -> t
-
-  val apply_block_transactions: string -> MKPTrie.trie -> MKPTrie.trie -> Transaction.t list -> (Transaction.t -> string) -> (MKPTrie.trie * MKPTrie.trie)
-end
-
 module State : sig
   type t = {
-    trie: MKPTrie.trie;
     db: Database.t;
+    root_hash: string;
   }
 
   val init_state: string -> Unsigned.Size_t.t -> t
-  val trie_get: t -> string -> MKPTrie.trie
-  val trie_set: t -> string -> RLP.t -> t
-  val flush_to_db: t -> unit
-  val get_from_db: t -> string -> RLP.t option
+  (* TODO: add param f: function to decode result*)
+  val get: t -> string -> string option
+  (* TODO: add param f: function to encode*)
+  val set: t -> string -> RLP.t -> t
   val revert_to_hash: t -> string -> t
 end
