@@ -24,7 +24,7 @@ TODO:
     - [x] tool to generate transactions (wallet)
     - [x] re-broadcast incoming blocks
   - [ ] fixes
-    - [ ] "Lwt_mvar.take node.blockchain" -> use a mutex instead
+    - [x] "Lwt_mvar.take node.blockchain" -> use a mutex instead
     - [ ] optimize block broadcasting (a lot of repeated requests)
     - [x] validate transaction
     - [ ] singleton Secp256k1 context
@@ -492,8 +492,13 @@ module Features = struct
       } in
       let candidate_hash = hash_block { candidate_block with hash = "" } in 
       if is_valid_pow candidate_hash difficulty then 
-        (print_endline ("mined block: " ^ (string_of_int candidate_block.index) ^ "\n");
-        Lwt.return ({ candidate_block with hash = candidate_hash }))
+        begin
+          print_endline ("mined block: " ^ (string_of_int candidate_block.index) ^ "\n");
+          Lwt.return (
+            (updated_state_trie, updated_contract_trie, updated_receipt_trie),
+            { candidate_block with hash = candidate_hash }
+          )
+        end
       else
         mine (nonce + 1)
       in mine 0
@@ -515,11 +520,10 @@ module Features = struct
     loop delay () =
       let* () = Lwt_unix.sleep delay in
 
-      let* () = Lwt_mutex.lock node.transaction_pool_mutex in
-      let curr_pool = !(node.transaction_pool) in
+      let* () = Lwt_mutex.lock node.transaction_pool_mutex in      
       let validated_transactions, remaining_transactions =
-        List.partition (fun (_, verified) -> verified) curr_pool in
-      node.transaction_pool := remaining_transactions;
+        List.partition (fun (_, verified) -> verified) !(node.transaction_pool) in
+        node.transaction_pool := remaining_transactions;
       Lwt_mutex.unlock node.transaction_pool_mutex;
 
       if List.length validated_transactions >= threshold then (
@@ -531,31 +535,55 @@ module Features = struct
         let difficulty = Block.calculate_difficulty prev_block in
         let miner_addr = node.miner_addr in
 
-        Printf.printf "started mine_block function\n";
-
-        let* mined_block = mine_block 
+        let* ((
+          updated_state_trie, 
+          updated_contract_trie, 
+          updated_receipt_trie
+        ), mined_block) = mine_block 
           node 
           transactions_to_mine prev_block difficulty miner_addr
         in
 
-        Printf.printf "finished mine_block function\n";
-
+        (* update blockchain *)
         let* () = Lwt_mutex.lock node.blockchain_mutex in
         node.blockchain := mined_block :: curr_blockchain;
         Lwt_mutex.unlock node.blockchain_mutex;
+
+        (* update global state *)
+        let* () = Lwt_mutex.lock node.global_state_mutex in
+        node.global_state := { 
+          !(node.global_state) with trie = updated_state_trie;
+        };
+        State.flush_trie_to_db !(node.global_state);
+        Lwt_mutex.unlock node.global_state_mutex;
+
+        (* update contract state *)
+        let* () = Lwt_mutex.lock node.contract_state_mutex in
+        node.contract_state := {
+          !(node.contract_state) with trie = updated_contract_trie;
+        };
+        State.flush_trie_to_db !(node.contract_state);
+        Lwt_mutex.unlock node.contract_state_mutex;
+
+        (* update receipt state *)
+        let* () = Lwt_mutex.lock node.receipt_state_mutex in
+        node.receipt_state := {
+          !(node.receipt_state) with trie = updated_receipt_trie;
+        };
+        State.flush_trie_to_db !(node.receipt_state);
+        Lwt_mutex.unlock node.receipt_state_mutex;
 
         let* () = Lwt_mutex.lock node.known_peers_mutex in
         let peers_list = !(node.known_peers) in
         Lwt_mutex.unlock node.known_peers_mutex;
         
-        let* () = broadcast_block peers_list mined_block in
+        (* let* () = broadcast_block peers_list mined_block in *)
         aux ()
       ) else (
         aux ()
       )
     in
     aux ()
-  
 end
 
 module RpcInterface = struct
