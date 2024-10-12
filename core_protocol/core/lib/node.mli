@@ -13,6 +13,8 @@ type node = {
   mining_mutex: Lwt_mutex.t;
   global_state: State.t ref;
   global_state_mutex: Lwt_mutex.t;
+  receipt_state: State.t ref;
+  receipt_state_mutex: Lwt_mutex.t;
   contract_state: State.t ref;
   contract_state_mutex: Lwt_mutex.t;
 }

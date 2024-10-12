@@ -5,6 +5,7 @@ type t = {
   transactions: Transaction.t list;
   miner: string;
   state_root: string;
+  receipt_root: string;
   nonce: int;
   difficulty: int;
   hash: string;

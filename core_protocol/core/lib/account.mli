@@ -16,5 +16,5 @@ module Account : sig
   val decode: RLP.t -> t
   val get_account: MKPTrie.t -> string -> t option
 
-  val apply_block_transactions: string -> MKPTrie.t -> MKPTrie.t -> Transaction.t list -> (Transaction.t -> string) -> (MKPTrie.t * MKPTrie.t * receipt list)
+  val apply_block_transactions: string -> MKPTrie.t -> MKPTrie.t -> MKPTrie.t -> Transaction.t list -> (Transaction.t -> string) -> (MKPTrie.t * MKPTrie.t * MKPTrie.t)
 end

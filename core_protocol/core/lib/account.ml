@@ -54,29 +54,25 @@ module Account = struct
   (* TODO: pass the entire State.t, not just the trie, so the function can apply 
       changes direct on serialized state
     *)
-  let apply_transaction miner_addr global_state_trie storage_trie tx vm_fun: (MKPTrie.t * MKPTrie.t * receipt) =
+  let apply_transaction miner_addr global_state_trie storage_trie receipt_trie tx vm_fun: 
+    (MKPTrie.t * MKPTrie.t * MKPTrie.t) =
     let open Digestif.SHA256 in
 
     let total_cost = tx.amount + (tx.gas_limit * tx.gas_price) in
 
-    let mocked_receipt_ok = {
-      result = Success;
-      gas_used = 0;
-      logs = [];
-      bloom_filter = "";
-      contract_address = None;
-    } in
-
-    let mocked_receipt_err = {
-      result = Failure;
-      gas_used = 0;
-      logs = [];
-      bloom_filter = "";
-      contract_address = None;
-    } in
-
     match get_account global_state_trie tx.sender with
-    | None -> (global_state_trie, storage_trie, mocked_receipt_err)
+    | None -> 
+      let receipt = {
+        transaction_hash = tx.hash;
+        result = Failure;
+        message = "Sender account not found";
+        gas_used = 0;
+        logs = [];
+        bloom_filter = "";
+        contract_address = None;
+      } in
+      let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash (encode_receipt receipt) in
+      (global_state_trie, storage_trie, updated_receipt_trie)
     | Some sender_account ->
       let miner_account = match get_account global_state_trie miner_addr with
       | None -> {
@@ -123,7 +119,18 @@ module Account = struct
           let code_hash = (to_hex (digest_string tx.payload)) in
 
           (match get_account global_state_trie contract_address with
-            | Some _ -> (state_trie_after_fees, global_state_trie, mocked_receipt_err)
+            | Some _ -> 
+              let receipt = {
+                transaction_hash = tx.hash;
+                result = Failure;
+                message = "Contract address already in use";
+                gas_used = 0;
+                logs = [];
+                bloom_filter = "";
+                contract_address = None;
+              } in
+              let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash (encode_receipt receipt) in
+              (state_trie_after_fees, global_state_trie, updated_receipt_trie)
             | None -> 
               let contract_account = {
                 address = contract_address;
@@ -132,8 +139,6 @@ module Account = struct
                 storage_root = "";
                 code_hash = code_hash;
               } in
-
-              Printf.printf "Contract account created: %s\n" contract_account.address;
 
               (* storing the contract account on global_state: <contract_address, ...>*)
               let state_trie_with_contract = 
@@ -144,8 +149,19 @@ module Account = struct
               let contract_code_state =
                 MKPTrie.insert storage_trie code_hash (`String tx.payload)
               in
-              
-              (state_trie_with_contract, contract_code_state, mocked_receipt_ok))
+
+              (* storing the receipt on receipt_state*)
+              let receipt = {
+                transaction_hash = tx.hash;
+                result = Success;
+                message = "Contract created";
+                gas_used = 0;
+                logs = [];
+                bloom_filter = "";
+                contract_address = Some contract_address;
+              } in
+              let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash (encode_receipt receipt) in
+              (state_trie_with_contract, contract_code_state, updated_receipt_trie))
       end
       else 
         begin
@@ -171,31 +187,55 @@ module Account = struct
             let vm_res = vm_fun tx in
             Printf.printf "[Ocaml tx_apply] VM %s finished execution\n" vm_res;
             (* TODO: add VM logs on receipt *)
-            (state_trie_after_pay_receiver, storage_trie, mocked_receipt_ok)
+
+            let mocked_receipt_ok = {
+              transaction_hash = tx.hash;
+              result = Success;
+              message = "Contract executed";
+              gas_used = 0;
+              logs = [];
+              bloom_filter = "";
+              contract_address = Some receiver_account.address;
+            } in
+            let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash (encode_receipt mocked_receipt_ok) in
+            (state_trie_after_pay_receiver, storage_trie, updated_receipt_trie)
           end
           (* normal transaction *)
           else 
-            (state_trie_after_pay_receiver, storage_trie, mocked_receipt_ok)
+            let receipt = {
+              transaction_hash = tx.hash;
+              result = Success;
+              message = "Normal transaction";
+              gas_used = 0;
+              logs = [];
+              bloom_filter = "";
+              contract_address = None;
+            } in
+            let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash (encode_receipt receipt) in
+            (state_trie_after_pay_receiver, storage_trie, updated_receipt_trie)
       end
 
-  let rec apply_transactions miner_addr global_state contract_state transactions vm_fun: (MKPTrie.t * MKPTrie.t * receipt list) = 
+  let rec apply_transactions miner_addr global_state contract_state receipt_trie transactions vm_fun: (MKPTrie.t * MKPTrie.t * MKPTrie.t) = 
     match transactions with
     | tx :: rest ->
-        let (new_global_state, new_contract_state, receipt) = 
-          apply_transaction miner_addr global_state contract_state tx vm_fun in 
-        let (final_global_state, final_contract_state, receipts) = 
-          apply_transactions miner_addr new_global_state new_contract_state rest vm_fun in
-        (final_global_state, final_contract_state, receipt :: receipts)
-    | [] -> (global_state, contract_state, [])
+        let (new_global_state, new_contract_state, new_receipt_trie) = 
+          apply_transaction miner_addr global_state contract_state receipt_trie tx vm_fun in 
+        let (final_global_state, final_contract_state, final_receipt_trie) = 
+          apply_transactions miner_addr new_global_state new_contract_state new_receipt_trie rest vm_fun in
+        (final_global_state, final_contract_state, final_receipt_trie)
+    | [] -> (global_state, contract_state, receipt_trie)
 
-  let apply_transaction_coinbase global_state_trie tx: (MKPTrie.t * receipt) =
-    let mocked_receipt = {
+  let apply_transaction_coinbase global_state_trie receipt_trie tx: (MKPTrie.t * MKPTrie.t) =
+    let receipt = {
+      transaction_hash = tx.hash;
       result = Success;
+      message = "Coinbase transaction";
       gas_used = 0;
       logs = [];
       bloom_filter = "";
       contract_address = None;
     } in
+    let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash (encode_receipt receipt) in  
 
     match get_account global_state_trie tx.receiver with
     | None ->
@@ -209,25 +249,26 @@ module Account = struct
       
       let state_trie_with_receiver = 
         MKPTrie.insert global_state_trie new_receiver_account.address (encode new_receiver_account) in
-      (state_trie_with_receiver, mocked_receipt)
+          
+      (state_trie_with_receiver, updated_receipt_trie)
     | Some receiver_account ->
       let updated_receiver_account = {
         receiver_account with balance = receiver_account.balance + tx.amount
       } in
       let state_trie_with_receiver = 
         MKPTrie.insert global_state_trie receiver_account.address (encode updated_receiver_account) in
-      (state_trie_with_receiver, mocked_receipt)
+      (state_trie_with_receiver, updated_receipt_trie)
 
   let apply_block_transactions 
-    miner_addr global_state_trie storage_trie transactions vm_fun =
+    miner_addr global_state_trie contract_trie receipt_trie transactions vm_fun =
     match transactions with
     | coinbase :: [] -> 
-        let (new_global_state, coinbase_receipt) = apply_transaction_coinbase global_state_trie coinbase in
-        (new_global_state, storage_trie, [coinbase_receipt])
+        let (new_global_state, coinbase_receipt_trie) = apply_transaction_coinbase global_state_trie receipt_trie coinbase in
+        (new_global_state, contract_trie, coinbase_receipt_trie)
     | coinbase :: transactions ->
-        let (new_global_state, coinbase_receipt) = apply_transaction_coinbase global_state_trie coinbase in
-        let (final_global_state, final_contract_state, tx_receipts) = 
-          apply_transactions miner_addr new_global_state storage_trie transactions vm_fun in
-        (final_global_state, final_contract_state, coinbase_receipt :: tx_receipts)
-    | _ -> (global_state_trie, storage_trie, [])
+        let (new_global_state, coinbase_receipt_trie) = apply_transaction_coinbase global_state_trie receipt_trie coinbase in
+        let (final_global_state, final_contract_trie, final_receipt_trie) = 
+          apply_transactions miner_addr new_global_state contract_trie coinbase_receipt_trie transactions vm_fun in
+        (final_global_state, final_contract_trie, final_receipt_trie)
+    | _ -> (global_state_trie, contract_trie, receipt_trie)
 end

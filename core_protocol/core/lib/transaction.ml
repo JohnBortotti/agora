@@ -14,7 +14,7 @@ type t = {
   signature: string;
 }
 
-type log = {
+type event_log = {
   address: string;
   topics: string list;
   data: string;
@@ -23,9 +23,11 @@ type log = {
 type transaction_result = Success | Failure
 
 type receipt = {
+  transaction_hash: string;
   result: transaction_result;
+  message: string;
   gas_used: int;
-  logs: log list;
+  logs: event_log list;
   bloom_filter: string;
   contract_address: string option;
 }
@@ -174,3 +176,20 @@ let transaction_of_json json: t =
     payload = json |> member "payload" |> to_string;
     signature = json |> member "signature" |> to_string;
   }
+
+  let encode_event_log log =
+    `List [
+      `String log.address;
+      `List (List.map (fun topic -> `String topic) log.topics);
+      `String log.data
+    ]
+
+  let encode_receipt receipt =
+    `List [
+      `String receipt.transaction_hash;
+      `String (match receipt.result with Success -> "Success" | Failure -> "Failure");
+      `String (string_of_int receipt.gas_used);
+      `List (List.map encode_event_log receipt.logs);
+      `String receipt.bloom_filter;
+      `String (match receipt.contract_address with None -> "" | Some addr -> addr)
+    ]
