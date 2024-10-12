@@ -312,8 +312,7 @@ module Features = struct
                       curr_chain
                     in
 
-                    print_endline "all new blocks are valid. Updating local chain.\n";
-
+                    (* all new blocks are valid, updating local chain *)
                     let new_chain = List.rev (List.append current_trusted_chain new_blocks) in
 
                     let* _ = Lwt_mutex.lock node.blockchain_mutex in
@@ -326,8 +325,8 @@ module Features = struct
                     let* () = broadcast_block peers_list received_block in
 
                     let all_incoming_transactions = List.flatten 
-                        (List.map (fun block -> block.Block.transactions) 
-                        new_blocks) 
+                      (List.map (fun block -> block.Block.transactions) 
+                      new_blocks) 
                     in
 
                     let* () = Lwt_mutex.lock node.transaction_pool_mutex in
@@ -345,17 +344,14 @@ module Features = struct
                     let curr_global_state = !(node.global_state) in
                     Lwt_mutex.unlock node.global_state_mutex;
 
+                    (* TODO: revert contract and trie state *)    
+
                     let reverted_state = State.revert_to_hash 
                       !(node.global_state) 
                       common_block.state_root 
                     in
 
-                    (* let* receipts_list = Lwt_list.map_p (fun (block: Block.t) ->
-                      let receipts = Account.apply_block_transactions 
-                      block.miner !(node.global_state) !(node.contract_state) 
-                      block.transactions (run_vm node) in
-                      Lwt.return receipts
-                    ) new_blocks in *)
+                    (* TODO: apply incoming blocks *)
 
                     let* () = Lwt_mutex.lock node.global_state_mutex in
                     node.global_state := reverted_state;
@@ -388,26 +384,66 @@ module Features = struct
         node.transaction_pool := updated_transaction_pool;
         Lwt_mutex.unlock node.transaction_pool_mutex;
 
-        (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
-        (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
+        let* _ = Lwt_mutex.lock node.global_state_mutex in
+        let global_state = !(node.global_state) in
+        Lwt_mutex.unlock node.global_state_mutex;
+    
+        let* _ = Lwt_mutex.lock node.contract_state_mutex in
+        let contract_state = !(node.contract_state) in
+        Lwt_mutex.unlock node.contract_state_mutex;
+    
+        let* _ = Lwt_mutex.lock node.receipt_state_mutex in
+        let receipt_state = !(node.receipt_state) in
+        Lwt_mutex.unlock node.receipt_state_mutex;
 
-        (* let _ = Account.apply_block_transactions
+        let (updated_state_trie, updated_contract_trie, updated_receipt_trie) = 
+          Account.apply_block_transactions
           received_block.miner
-          !(node.global_state)
-          !(node.contract_state)
+          global_state.trie
+          contract_state.trie
+          receipt_state.trie
           received_block.transactions
-          (run_vm node) in *)
+          (run_vm node)
+        in
+        let state_root = MKPTrie.hash updated_state_trie in
+        let receipt_root = MKPTrie.hash updated_receipt_trie in
 
-        (* Lwt_mutex.unlock node.global_state_mutex; *)
-        (* Lwt_mutex.unlock node.contract_state_mutex; *)
+        Printf.printf "global_state_root: %s\n" state_root;
+        Printf.printf "receipt_root: %s\n" receipt_root;
 
+        (* update blockchain *)        
         let* () = Lwt_mutex.lock node.blockchain_mutex in
         node.blockchain := received_block :: curr_chain;
         Lwt_mutex.unlock node.blockchain_mutex;
 
+        (* update global state *)
+        let* () = Lwt_mutex.lock node.global_state_mutex in
+        node.global_state := { 
+          !(node.global_state) with trie = updated_state_trie;
+        };
+        State.flush_trie_to_db !(node.global_state);
+        Lwt_mutex.unlock node.global_state_mutex;
+
+        (* update contract state *)
+        let* () = Lwt_mutex.lock node.contract_state_mutex in
+        node.contract_state := {
+          !(node.contract_state) with trie = updated_contract_trie;
+        };
+        State.flush_trie_to_db !(node.contract_state);
+        Lwt_mutex.unlock node.contract_state_mutex;
+
+        (* update receipt state *)
+        let* () = Lwt_mutex.lock node.receipt_state_mutex in
+        node.receipt_state := {
+          !(node.receipt_state) with trie = updated_receipt_trie;
+        };
+        State.flush_trie_to_db !(node.receipt_state);
+        Lwt_mutex.unlock node.receipt_state_mutex;
+
         let* () = Lwt_mutex.lock node.known_peers_mutex in
         let peers_list = !(node.known_peers) in
         Lwt_mutex.unlock node.known_peers_mutex;
+
         let* () = broadcast_block peers_list received_block in
 
         Lwt.return_true
@@ -462,7 +498,8 @@ module Features = struct
     let receipt_state = !(node.receipt_state) in
     Lwt_mutex.unlock node.receipt_state_mutex;
 
-    let (updated_state_trie, updated_contract_trie, updated_receipt_trie) = Account.apply_block_transactions
+    let (updated_state_trie, updated_contract_trie, updated_receipt_trie) = 
+      Account.apply_block_transactions
       node.miner_addr
       global_state.trie
       contract_state.trie
@@ -577,7 +614,8 @@ module Features = struct
         let peers_list = !(node.known_peers) in
         Lwt_mutex.unlock node.known_peers_mutex;
         
-        (* let* () = broadcast_block peers_list mined_block in *)
+        let* () = broadcast_block peers_list mined_block in
+        
         aux ()
       ) else (
         aux ()
