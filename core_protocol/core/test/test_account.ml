@@ -1,7 +1,7 @@
 open Alcotest
 open Agora_core.Transaction
 open Agora_core.State
-open Agora_core.State.Account
+open Agora_core.Account.Account
 
 let sample_account = {
   address = "0x1234567890abcdef";

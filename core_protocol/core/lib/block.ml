@@ -7,6 +7,7 @@ type t = {
   transactions: Transaction.t list;
   miner: string;
   state_root: string;
+  receipt_root: string;
   nonce: int;
   difficulty: int;
   hash: string;
@@ -36,13 +37,14 @@ let string_of_block block =
   in
   let txs = List.map transaction_to_json_string block.transactions |> String.concat ",\n " in
   Printf.sprintf "Block {\n  index: %d;\n  previous_hash: %s;\n  timestamp: %f;
-  transactions: [\n  %s\n  ];\n miner: %s;\n state_root: %s;\n nonce: %d;\n difficulty: %d;\n hash: %s\n}"
+  transactions: [\n  %s\n  ];\n miner: %s;\n state_root: %s;\n receipt_root: %s;\n nonce: %d;\n difficulty: %d;\n hash: %s\n}"
   block.index
   block.previous_hash
   block.timestamp
   txs
   block.miner
   block.state_root
+  block.receipt_root
   block.nonce
   block.difficulty
   block.hash
@@ -66,6 +68,7 @@ let block_to_json (block: t) =
     ("nonce", `Int block.nonce);
     ("miner", `String block.miner);
     ("state_root", `String block.state_root);
+    ("receipt_root", `String block.receipt_root);
     ("hash", `String block.hash);
     ("difficulty", `Int block.difficulty)
   ]
@@ -89,6 +92,7 @@ let block_of_json json: t =
     transactions = json |> member "transactions" |> to_list |> List.map Transaction.transaction_of_json;
     miner = json |> member "miner" |> to_string;
     state_root = json |> member "state_root" |> to_string;
+    receipt_root = json |> member "receipt_root" |> to_string;
     nonce = json |> member "nonce" |> to_int;
     hash = json |> member "hash" |> to_string;
     difficulty = json |> member "difficulty" |> to_int;
@@ -116,13 +120,14 @@ let hash_block block =
     string_of_transaction_compact tx
   ) block.transactions) in
   let data = 
-    Printf.sprintf "%d%s%f%s%s%s%d%d"
+    Printf.sprintf "%d%s%f%s%s%s%s%d%d"
       block.index
       block.previous_hash
       block.timestamp
       transactions_str
       block.miner
       block.state_root
+      block.receipt_root
       block.nonce
       block.difficulty
   in
