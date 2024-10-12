@@ -14,8 +14,7 @@ module Account : sig
   val account_to_json: t -> Yojson.Basic.t
   val encode: t -> RLP.t
   val decode: RLP.t -> t
-  val get_account: State.t -> string -> t option
+  val get_account: MKPTrie.t -> string -> t option
 
-  val apply_block_transactions: string -> State.t -> State.t -> Transaction.t list -> (Transaction.t -> string) -> receipt list
-
+  val apply_block_transactions: string -> MKPTrie.t -> MKPTrie.t -> Transaction.t list -> (Transaction.t -> string) -> (MKPTrie.t * MKPTrie.t * receipt list)
 end

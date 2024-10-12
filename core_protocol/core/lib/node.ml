@@ -66,32 +66,35 @@ module Features = struct
     Lwt.return_unit
 
   let get_account node address =
-    let open Lwt.Infix in
-    (* let* _ = Lwt_mutex.lock node.global_state_mutex in *)
+    let* _ = Lwt_mutex.lock node.global_state_mutex in
     let global_state = !(node.global_state) in
-    match Account.get_account global_state address with
+    Lwt_mutex.unlock node.global_state_mutex;
+
+    match Account.get_account global_state.trie address with
       | Some acc_data ->
+          Lwt_mutex.unlock node.global_state_mutex;
           let acc_json = Account.account_to_json acc_data in
           Lwt.return acc_json
-      | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
+      | _ -> 
+          Lwt_mutex.unlock node.global_state_mutex;
+          Lwt.return (`Assoc [ ("error", `String "Account not found") ])
 
   let get_code node address =
-    let open Lwt.Infix in
-    (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
+    let* () = Lwt_mutex.lock node.global_state_mutex in
     let global_state = !(node.global_state) in
-    (* Lwt_mutex.unlock node.global_state_mutex; *)
-    match Account.get_account global_state address with
+    Lwt_mutex.unlock node.global_state_mutex;
+
+    match Account.get_account global_state.trie address with
     | Some contract_acc_data ->
-        (
-        (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
+        let* () = Lwt_mutex.lock node.contract_state_mutex in
         let contract_state = !(node.contract_state) in
         Lwt_mutex.unlock node.contract_state_mutex;
-        match State.get contract_state contract_acc_data.code_hash with
+
+        let contract_state = State.get_from_db contract_state contract_acc_data.code_hash in
+        (match contract_state with
         | None -> Lwt.return (`Assoc [ ("error", `String "Contract code not found") ])
-        | Some code -> (
-            (match RLP.decode code with
-            | `String code -> Lwt.return (`Assoc [ ("code", `String code) ])
-            | _ -> failwith "Invalid RLP encoding for contract code")))
+        | Some (`String code) -> Lwt.return (`Assoc [ ("code", `String code) ])
+        | _ -> failwith "Invalid RLP encoding for contract code")
     | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
     
 
@@ -344,19 +347,17 @@ module Features = struct
                     (* let curr_contract_state = !(node.contract_state) in *)
                     (* Lwt_mutex.unlock node.contract_state_mutex; *)
 
-                    let reverted_state = State.revert_to_hash 
+                    (* let* reverted_state = State.revert_to_hash 
                       !(node.global_state) 
                       common_block.state_root 
-                    in
+                    in *)
 
-                    let open Lwt.Infix in
-
-                    let* receipts_list = Lwt_list.map_p (fun (block: Block.t) ->
+                    (* let* receipts_list = Lwt_list.map_p (fun (block: Block.t) ->
                       let receipts = Account.apply_block_transactions 
                       block.miner !(node.global_state) !(node.contract_state) 
                       block.transactions (run_vm node) in
                       Lwt.return receipts
-                    ) new_blocks in
+                    ) new_blocks in *)
 
                     (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
                     (* node.global_state := updated_global_state; *)
@@ -364,7 +365,7 @@ module Features = struct
 
                     (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
                     (* node.contract_state := updated_contract_state; *)
-                    Lwt_mutex.unlock node.contract_state_mutex;
+                    (* Lwt_mutex.unlock node.contract_state_mutex; *)
                     
                     Lwt.return_true
                   | Error msg ->
@@ -396,12 +397,12 @@ module Features = struct
         (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
         (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
 
-        let _ = Account.apply_block_transactions
+        (* let _ = Account.apply_block_transactions
           received_block.miner
           !(node.global_state)
           !(node.contract_state)
           received_block.transactions
-          (run_vm node) in
+          (run_vm node) in *)
 
         (* Lwt_mutex.unlock node.global_state_mutex; *)
         (* Lwt_mutex.unlock node.contract_state_mutex; *)
@@ -455,33 +456,29 @@ module Features = struct
       signature = "";
     } in
 
-    (* let* () = Lwt_mutex.lock node.global_state_mutex in *)
-    (* let* () = Lwt_mutex.lock node.contract_state_mutex in *)
-
+    let* _ = Lwt_mutex.lock node.global_state_mutex in
     let global_state = !(node.global_state) in
-    let contract_state = !(node.contract_state) in
+    Lwt_mutex.unlock node.global_state_mutex;
 
-    let _ = Account.apply_block_transactions 
+    let* _ = Lwt_mutex.lock node.contract_state_mutex in
+    let contract_state = !(node.contract_state) in
+    Lwt_mutex.unlock node.contract_state_mutex;
+
+    let (updated_state_trie, updated_contract_trie, receipt) = Account.apply_block_transactions
       node.miner_addr
-      global_state
-      contract_state
+      global_state.trie
+      contract_state.trie
       (coinbase_tx :: transactions)
       (run_vm node)
-    in
+    in  
+    let state_root = MKPTrie.hash updated_state_trie in
 
-    let open Digestif.SHA256 in
+    (* let* () = Lwt_mutex.lock node.global_state_mutex in
+    let global_state = !(node.global_state) in
+    let state_root = MKPTrie.hash global_state.trie in
+    Lwt_mutex.unlock node.global_state_mutex; *)
 
-    (* let state_root = global_state.root_hash in *)
-    let root_key = (to_hex (digest_string "root_hash")) in
-    (match Database.get global_state.db root_key with
-      | None -> Printf.printf "global state root not found\n"
-      | Some root_on_db -> Printf.printf "global_state_root: %s\n" root_on_db
-    );
-
-    let state_root = "0" in
-
-    (* Lwt_mutex.unlock node.global_state_mutex; *)
-    (* Lwt_mutex.unlock node.contract_state_mutex; *)
+    Printf.printf "global_state_root: %s\n" state_root;
 
     let rec mine nonce =
       let* _ = Lwt.pause () in
@@ -531,7 +528,6 @@ module Features = struct
       if List.length validated_transactions >= threshold then (
         let transactions_to_mine = List.map fst validated_transactions in
 
-        (* perform operations *)
         let curr_blockchain = !(node.blockchain) in
 
         let prev_block = List.hd curr_blockchain in

@@ -11,28 +11,28 @@ module MKPTrie : sig
     | Leaf of int list * string
     | Extension of int list * node
     | Branch of (node option array) * (string option)
-  type trie = node option
+    type t = node option
 
-  val string_of_node: trie -> int -> string
+  val string_of_node: t -> int -> string
   val string_to_nibbles: string -> int list
   val nibbles_to_string: int list -> string
   val common_prefix_length: string list -> string list -> int
-  val insert: trie -> string -> RLP.t -> trie
-  val lookup: trie -> string -> node option
-  val hash: trie -> string
+  val insert: t -> string -> RLP.t -> t
+  val lookup: t -> string -> node option
+  val hash: t -> string
   val serialize: node -> string
 end
 
 module State : sig
   type t = {
+    trie: MKPTrie.t;
     db: Database.t;
-    mutable root_hash: string;
   }
 
   val init_state: string -> Unsigned.Size_t.t -> t
-  (* TODO: add param f: function to decode result*)
-  val get: t -> string -> string option
-  (* TODO: add param f: function to encode*)
-  val set: t -> string -> RLP.t -> unit
-  val revert_to_hash: t -> string -> unit
+  val trie_get: t -> string -> MKPTrie.t
+  val trie_set: t -> string -> RLP.t -> t
+  val flush_trie_to_db: t -> unit
+  val get_from_db: t -> string -> RLP.t option
+  val revert_to_hash: t -> string -> t
 end

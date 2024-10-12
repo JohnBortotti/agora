@@ -1,4 +1,6 @@
 open Digestif.SHA256
+open Lwt_mvar
+open Lwt.Syntax
 
 module RLP = struct
   type t = [ `String of string | `List of t list ]
@@ -104,7 +106,7 @@ module MKPTrie = struct
     | Extension of int list * node
     | Branch of (node option array) * (string option)
 
-  type trie = node option
+  type t = node option
 
   let rec string_of_node node level =
     let indent = String.make (level * 2) ' ' in
@@ -173,7 +175,7 @@ module MKPTrie = struct
     | _, [] -> []
     | n, _ :: xs -> drop (n - 1) xs
   
-  let insert (t: trie) (key: string) (value: RLP.t): trie =
+  let insert (t: t) (key: string) (value: RLP.t): t =
     let list_sub lst start len =
       let rec aux lst i len acc =
         match lst with
@@ -250,7 +252,7 @@ module MKPTrie = struct
   let rec lookup trie key =
     let nibbles = string_to_nibbles key in
     lookup_with_nibbles trie nibbles
-  and lookup_with_nibbles (t: trie) (nibbles: int list): node option =
+  and lookup_with_nibbles (t: t) (nibbles: int list): t =
     match t with
     | None -> None
     | Some (Extension (shared_prefix, next_node)) ->
@@ -326,17 +328,32 @@ module MKPTrie = struct
           RLP.encode_string "branch" ::
           (Array.to_list children_rlp @ [value_rlp])
         )
+
+  let rec hash_iter f = function
+    | None -> ()
+    | Some node -> (
+        let node_hash = hash (Some node) in
+        let serialized_node = serialize node in
+        f node_hash serialized_node;
+        match node with
+        | Leaf _ -> ()
+        | Extension (_, child) -> hash_iter f (Some child)
+        | Branch (children, _) -> Array.iter (hash_iter f) children
+      )
 end
 
 module State = struct
   type t = {
+    trie: MKPTrie.t;
     db: Database.t;
-    mutable root_hash: string;
   }
 
-  let init_state db_path mem_size =
-    let db = Database.create db_path mem_size in
-    {db;root_hash=""}
+  let trie_get state key =
+    MKPTrie.lookup state.trie key
+
+  let trie_set state key value =
+    let new_trie = MKPTrie.insert state.trie key value in
+    { state with trie = new_trie }
 
   let hex_of_bytes bytes =
     Bytes.fold_left (fun acc byte -> acc ^ Printf.sprintf "%02x" (int_of_char byte)) "" bytes
@@ -355,13 +372,16 @@ module State = struct
     done;
     Bytes.to_string bytes
 
-  let nibbles_from_db_str s =
-    let nibbles = ref [] in
-      String.iter (fun c ->
-        let nibble = int_of_string ("0x" ^ String.make 1 c) in
-        nibbles := !nibbles @ [nibble]
-      ) s;
-      !nibbles
+  let flush_trie_to_db state =
+    MKPTrie.hash_iter (fun key value ->
+      let key_bytes = Bytes.of_string key in
+      let value_bytes = Bytes.of_string value in
+
+      let key_hex = hex_of_bytes key_bytes in
+      let value_hex = hex_of_bytes value_bytes in
+
+      Database.write state.db key_hex value_hex
+    ) state.trie
 
   let get_from_db state key =
     let key_bytes = Bytes.of_string key in
@@ -380,217 +400,70 @@ module State = struct
              Printf.printf "Error during conversion or RLP decoding: %s\n" msg; 
              None)
 
-  let rec parse_node state serialized_str =
+  let nibbles_from_db_str s =
+    let nibbles = ref [] in
+      String.iter (fun c ->
+        let nibble = int_of_string ("0x" ^ String.make 1 c) in
+        nibbles := !nibbles @ [nibble]
+      ) s;
+      !nibbles
+
+  let revert_to_hash state hash = 
+    let rec rebuild_trie state rlp = 
     let open MKPTrie in
-    let rlp_node = RLP.decode serialized_str in
-    match rlp_node with
+    match rlp with
     | `List (`String "leaf" :: `String nibbles_str :: `String value_str :: []) ->
         let nibbles = nibbles_from_db_str nibbles_str in
-        Leaf (nibbles, value_str)
+        Some (Leaf (nibbles, value_str))
     | `List (`String "extension" :: `String nibbles_str :: `String child_hash :: []) ->
         let nibbles = nibbles_from_db_str nibbles_str in
-        (match Database.get state.db child_hash with
-        | None -> failwith ("Child node not found in database: " ^ child_hash)
-        | Some child_serialized_str ->
-            let child_node = parse_node state child_serialized_str in
-            Extension (nibbles, child_node))
-    | `List (`String "branch" :: child_rlp_list) when List.length child_rlp_list = 17 ->
-        let children = Array.init 16 (fun i ->
-          match List.nth child_rlp_list i with
+        let serialized_child_node = (match get_from_db state child_hash with
+          | Some value -> value 
+          | None -> failwith "Child node not found in database")
+        in
+        (match rebuild_trie state serialized_child_node with
+        | Some child -> Some (Extension (nibbles, child))
+        | None -> None)
+    | `List (`String "branch" :: child_rlp_list) ->
+        let children_rlp = take 16 child_rlp_list in
+        let children = Array.of_list (List.map (function
           | `String "" -> None
-          | `String child_hash ->
-              (match Database.get state.db child_hash with
-              | None -> None
-              | Some child_serialized_str ->
-                  Some (parse_node state child_serialized_str))
+          | `String child_hash -> 
+              (match get_from_db state child_hash with
+              | Some child_node -> rebuild_trie state (child_node)
+              | None -> None)
           | _ -> failwith "Invalid RLP structure for branch node"
-        ) in
+        ) children_rlp)
+        in
         let value_opt = match List.nth child_rlp_list 16 with
           | `String "" -> None
           | `String value_str -> Some value_str
           | _ -> failwith "Invalid RLP structure for branch node"
         in
-        Branch (children, value_opt)
-    | _ -> failwith "Invalid RLP structure"
-
-  let rec match_nibbles key_nibbles node_nibbles =
-    match (key_nibbles, node_nibbles) with
-    | (k::ks, n::ns) when k = n ->
-        let (common, rest_key, rest_node) = match_nibbles ks ns in
-        (k::common, rest_key, rest_node)
-    | _ -> ([], key_nibbles, node_nibbles)
-
-  let rec trie_get state node key_nibbles =
-    let open MKPTrie in
-    match node with
-    | Leaf (node_nibbles, value) ->
-        if node_nibbles = key_nibbles then Some value else None
-    | Extension (node_nibbles, child_node) ->
-        let (_, rest_key, rest_node) = match_nibbles key_nibbles node_nibbles in
-        if rest_node = [] then
-          trie_get state child_node rest_key
-        else
-          None
-    | Branch (children, value_opt) ->
-        (match key_nibbles with
-        | [] -> value_opt
-        | idx::rest_nibbles ->
-            (match children.(idx) with
-            | None -> None
-            | Some child_node -> trie_get state child_node rest_nibbles))
-
-  let hash_string s =
-    let open Digestif.SHA256 in
-    to_hex (digest_string s)
-
-  let write_node_to_db state node =
-    let serialized = MKPTrie.serialize node in
-    let node_hash = hash_string (serialized) in
-    let node_hex = hex_of_bytes (Bytes.of_string (serialized)) in
-    Database.write state.db node_hash node_hex;
-    node_hash
-
-  let rec trie_set state node_opt key_nibbles value =
-    let open MKPTrie in
-    match node_opt with
-    | None ->
-        (* The node is empty; create a new leaf node *)
-        let leaf_node = Leaf (key_nibbles, value) in
-        let _ = write_node_to_db state leaf_node in
-        leaf_node
-    | Some node ->
-        match node with
-        | Leaf (node_nibbles, node_value) ->
-            (* Handle the case where we're at a leaf node *)
-            let (common_prefix, rest_key, rest_node) = match_nibbles key_nibbles node_nibbles in
-            if rest_node = [] && rest_key = [] then
-              (* The key matches the existing leaf; update the value *)
-              let leaf_node = Leaf (node_nibbles, value) in
-              let _ = write_node_to_db state leaf_node in
-              leaf_node
-            else
-              (* Need to create a branch node to resolve the conflict *)
-              let new_leaf_node = Leaf (rest_key, value) in
-              let _ = write_node_to_db state new_leaf_node in
-              let existing_leaf_node = Leaf (rest_node, node_value) in
-              let _ = write_node_to_db state existing_leaf_node in
-              let branch_children = Array.make 16 None in
-              (* Update the branch's children *)
-              (match rest_key with
-              | idx::rest when rest = [] ->
-                  branch_children.(idx) <- Some new_leaf_node
-              | idx::rest ->
-                  let ext_node = Extension (rest, new_leaf_node) in
-                  let _ = write_node_to_db state ext_node in
-                  branch_children.(idx) <- Some ext_node
-              | [] -> ());
-              (match rest_node with
-              | idx::rest when rest = [] ->
-                  branch_children.(idx) <- Some existing_leaf_node
-              | idx::rest ->
-                  let ext_node = Extension (rest, existing_leaf_node) in
-                  let _ = write_node_to_db state ext_node in
-                  branch_children.(idx) <- Some ext_node
-              | [] -> ());
-              let branch_node = Branch (branch_children, None) in
-              let _ = write_node_to_db state branch_node in
-              if common_prefix = [] then
-                branch_node
-              else
-                (* Create an extension node for the common prefix *)
-                let extension_node = Extension (common_prefix, branch_node) in
-                let _ = write_node_to_db state extension_node in
-                extension_node
-        | Extension (node_nibbles, child_node) ->
-            (* Handle the case where we're at an extension node *)
-            let (common_prefix, rest_key, rest_node) = match_nibbles key_nibbles node_nibbles in
-            if rest_node = [] then
-              (* The key matches the extension's nibbles; proceed to child *)
-              let new_child_node = trie_set state (Some child_node) rest_key value in
-              let extension_node = Extension (node_nibbles, new_child_node) in
-              let _ = write_node_to_db state extension_node in
-              extension_node
-            else
-              (* Split the extension node *)
-              let new_leaf_node = Leaf (rest_key, value) in
-              let _ = write_node_to_db state new_leaf_node in
-              let existing_extension_node = Extension (rest_node, child_node) in
-              let _ = write_node_to_db state existing_extension_node in
-              let branch_children = Array.make 16 None in
-              (match rest_key with
-              | idx::rest when rest = [] ->
-                  branch_children.(idx) <- Some new_leaf_node
-              | idx::rest ->
-                  let ext_node = Extension (rest, new_leaf_node) in
-                  let _ = write_node_to_db state ext_node in
-                  branch_children.(idx) <- Some ext_node
-              | [] -> ());
-              (match rest_node with
-              | idx::rest when rest = [] ->
-                  branch_children.(idx) <- Some existing_extension_node
-              | idx::rest ->
-                  let ext_node = Extension (rest, existing_extension_node) in
-                  let _ = write_node_to_db state ext_node in
-                  branch_children.(idx) <- Some ext_node
-              | [] -> ());
-              let branch_node = Branch (branch_children, None) in
-              let _ = write_node_to_db state branch_node in
-              if common_prefix = [] then
-                branch_node
-              else
-                let extension_node = Extension (common_prefix, branch_node) in
-                let _ = write_node_to_db state extension_node in
-                extension_node
-        | Branch (children, value_opt) ->
-            (* Handle the case where we're at a branch node *)
-            (match key_nibbles with
-            | [] ->
-                (* We're at the node corresponding to the key; update the value *)
-                let branch_node = Branch (children, Some value) in
-                let _ = write_node_to_db state branch_node in
-                branch_node
-            | idx::rest_nibbles ->
-                (* Proceed to the appropriate child *)
-                let child_node_opt = children.(idx) in
-                let new_child_node = trie_set state child_node_opt rest_nibbles value in
-                let new_children = Array.copy children in
-                new_children.(idx) <- Some new_child_node;
-                let branch_node = Branch (new_children, value_opt) in
-                let _ = write_node_to_db state branch_node in
-                branch_node)
-          
-  let get state key =
-    let key_nibbles = MKPTrie.string_to_nibbles key in
-    let curr_root_hash = state.root_hash in
-    match curr_root_hash with
-    | "" | "0" -> None
-    | root_hash ->
-        match get_from_db state root_hash with
-        | None -> None
-        | Some serialized_root ->
-            let root_node = parse_node state (RLP.encode serialized_root) in
-            (trie_get state root_node key_nibbles)
-
-  let set state key value =
-    let value_rlp = RLP.encode value in
-    let key_nibbles = MKPTrie.string_to_nibbles key in
-    let root_node_opt =
-      if state.root_hash = "" || state.root_hash = "0" then
-        None
-      else
-        match get_from_db state state.root_hash with
-        | None -> failwith ("Root node not found in database: " ^ state.root_hash)
-        | Some serialized_str -> Some (parse_node state (RLP.encode serialized_str))
+        Some (Branch (children, value_opt))
+    | _ -> print_endline "Invalid RLP structure:"; None
     in
-    let new_root_node = trie_set state root_node_opt key_nibbles value_rlp in
-    let new_root_hash = write_node_to_db state new_root_node in
-    Database.write state.db (to_hex (digest_string "root_hash")) (new_root_hash);
-    ()
-    
-  let revert_to_hash state hash =
-    let result = match Database.get state.db hash with
-      | Some _ -> { state with root_hash = hash }
-      | None -> failwith ("Hash not found in database: " ^ hash) 
-  in 
-  ()
+    let rebuild_trie_from_root key =
+      match get_from_db state key with
+      | None -> 
+          print_endline ("Node with key " ^ key ^ " not found in the database.\n"); 
+          state
+      | Some serialized_node ->
+          let trie = rebuild_trie state (serialized_node) in
+          { state with trie=trie }
+    in
+    if hash <> "0" then
+      begin
+        print_endline ("reverting to state with hash " ^ hash ^ "\n");
+        let restored_state = rebuild_trie_from_root hash in
+        restored_state
+      end
+    else
+      (print_endline "reverting state to genesis block\n";
+      { state with trie=None })
+ 
+  let init_state db_path mem_size =
+    let db = Database.create db_path mem_size in
+    let trie = None in
+    {trie;db}
 end
