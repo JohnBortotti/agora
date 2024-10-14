@@ -11,8 +11,8 @@ services:
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
       - VM_LIB_PATH=/home/opam/virtual_machine/libvirtual_machine.so
       - ENTROPY_POOL=1
-    volumes:
-      - ./core/:/home/opam/app
+    # volumes:
+    #   - ./core/:/home/opam/app
     working_dir: /home/opam/app
     ports: 
       - "8081:8080"

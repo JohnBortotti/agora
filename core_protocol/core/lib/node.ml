@@ -318,17 +318,9 @@ module Features = struct
                     node.transaction_pool := updated_tx_pool;
                     Lwt_mutex.unlock node.transaction_pool_mutex;
 
-                    let* () = Lwt_mutex.lock node.global_state_mutex in
-                    let curr_global_state = !(node.global_state) in
-                    Lwt_mutex.unlock node.global_state_mutex;
-
                     let* () = Lwt_mutex.lock node.contract_state_mutex in
                     let curr_contract_state = !(node.contract_state) in
                     Lwt_mutex.unlock node.contract_state_mutex;
-
-                    let* () = Lwt_mutex.lock node.receipt_state_mutex in
-                    let curr_receipt_state = !(node.receipt_state) in
-                    Lwt_mutex.unlock node.receipt_state_mutex;
 
                     let reverted_global_state = State.revert_to_hash 
                       !(node.global_state) 
@@ -420,8 +412,6 @@ module Features = struct
           received_block.transactions
           (run_vm node)
         in
-        let state_root = MKPTrie.hash updated_state_trie in
-        let receipt_root = MKPTrie.hash updated_receipt_trie in
 
         (* update blockchain *)        
         let* () = Lwt_mutex.lock node.blockchain_mutex in

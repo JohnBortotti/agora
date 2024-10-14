@@ -1,5 +1,5 @@
 (executable
  (public_name agora_core)
- (flags (:standard -w -26 -w -32 -w -50))
+ (flags)
  (name main)
  (libraries agora_core))

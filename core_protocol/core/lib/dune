@@ -1,4 +1,4 @@
 (library
  (name agora_core)
- (flags (:standard -w -26 -w -32 -w -50 -w -27 -w -33))
+ (flags)
  (libraries digestif cryptokit lwt lwt.unix cohttp-lwt-unix yojson secp256k1 ctypes.foreign))
