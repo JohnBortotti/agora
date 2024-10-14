@@ -12,7 +12,7 @@ type t = {
   signature: string;
 }
 
-type event_log = {
+type event = {
   address: string;
   topics: string list;
   data: string;
@@ -23,7 +23,7 @@ type receipt = {
   result: transaction_result;
   message: string;
   gas_used: int;
-  logs: event_log list;
+  logs: event list;
   bloom_filter: string;
   contract_address: string option;
 }
@@ -35,5 +35,5 @@ val string_of_transaction: t -> string
 val transaction_to_json: t -> Yojson.Basic.t
 val transaction_of_json: Yojson.Basic.t -> t
 
-val encode_event_log: event_log -> RLP.t
+val encode_event: event -> RLP.t
 val encode_receipt: receipt -> RLP.t

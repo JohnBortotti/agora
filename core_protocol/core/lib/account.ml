@@ -50,10 +50,6 @@ module Account = struct
     | _ -> None
 
   (* TODO: fix the case we sender or receiver is the same address as miner_addr *)
-  (* TODO: instead of result, return: transaction receipt *)
-  (* TODO: pass the entire State.t, not just the trie, so the function can apply 
-      changes direct on serialized state
-    *)
   let apply_transaction miner_addr global_state_trie storage_trie receipt_trie tx vm_fun: 
     (MKPTrie.t * MKPTrie.t * MKPTrie.t) =
     let open Digestif.SHA256 in
@@ -130,7 +126,7 @@ module Account = struct
                 contract_address = None;
               } in
               let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash (encode_receipt receipt) in
-              (state_trie_after_fees, global_state_trie, updated_receipt_trie)
+              (state_trie_after_fees, storage_trie, updated_receipt_trie)
             | None -> 
               let contract_account = {
                 address = contract_address;
@@ -149,6 +145,8 @@ module Account = struct
               let contract_code_state =
                 MKPTrie.insert storage_trie code_hash (`String tx.payload)
               in
+
+              Printf.printf "contract created: %s\n" contract_address;
 
               (* storing the receipt on receipt_state*)
               let receipt = {
@@ -197,7 +195,9 @@ module Account = struct
               bloom_filter = "";
               contract_address = Some receiver_account.address;
             } in
-            let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash (encode_receipt mocked_receipt_ok) in
+            let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash 
+              (encode_receipt mocked_receipt_ok) 
+            in
             (state_trie_after_pay_receiver, storage_trie, updated_receipt_trie)
           end
           (* normal transaction *)
@@ -258,7 +258,7 @@ module Account = struct
       let state_trie_with_receiver = 
         MKPTrie.insert global_state_trie receiver_account.address (encode updated_receiver_account) in
       (state_trie_with_receiver, updated_receipt_trie)
-
+       
   let apply_block_transactions 
     miner_addr global_state_trie contract_trie receipt_trie transactions vm_fun =
     match transactions with

@@ -156,11 +156,16 @@ module Features = struct
       in
       let timeout =
         let* () = Lwt_unix.sleep timeout_duration in
-        Lwt.return_unit
+        Lwt.fail_with "Timeout"
       in
       Lwt.pick [request; timeout]
     in
-    let* _ = Lwt_list.iter_p broadcast_to_peer peers_list in
+    let handle_peer peer =
+      Lwt.catch
+        (fun () -> broadcast_to_peer peer)
+        (fun _ -> Lwt.return_unit)
+    in
+    let* _ = Lwt_list.iter_p handle_peer peers_list in
     Lwt.return_unit
 
   let run_vm node tx = 
@@ -344,18 +349,55 @@ module Features = struct
                     let curr_global_state = !(node.global_state) in
                     Lwt_mutex.unlock node.global_state_mutex;
 
-                    (* TODO: revert contract and trie state *)    
+                    let* () = Lwt_mutex.lock node.contract_state_mutex in
+                    let curr_contract_state = !(node.contract_state) in
+                    Lwt_mutex.unlock node.contract_state_mutex;
 
-                    let reverted_state = State.revert_to_hash 
+                    let* () = Lwt_mutex.lock node.receipt_state_mutex in
+                    let curr_receipt_state = !(node.receipt_state) in
+                    Lwt_mutex.unlock node.receipt_state_mutex;
+
+                    let reverted_global_state = State.revert_to_hash 
                       !(node.global_state) 
                       common_block.state_root 
                     in
 
-                    (* TODO: apply incoming blocks *)
+                    let reverted_receipt_state = State.revert_to_hash 
+                      !(node.receipt_state) 
+                      common_block.receipt_root
+                    in
 
+                    (* apply incoming blocks *)
+                    let (updated_global_trie, updated_contract_trie, updated_receipt_trie) = 
+                      List.fold_left (fun (global_state, contract_state, receipt_state) (block: Block.t) ->
+                        Account.apply_block_transactions 
+                        block.miner global_state contract_state receipt_state block.transactions (run_vm node)
+                      )
+                      (reverted_global_state.trie, curr_contract_state.trie, reverted_receipt_state.trie)
+                      new_blocks
+                    in
+
+                    (* updating states *)
                     let* () = Lwt_mutex.lock node.global_state_mutex in
-                    node.global_state := reverted_state;
+                    node.global_state := {
+                      !(node.global_state) with trie = updated_global_trie;
+                    };
+                    State.flush_trie_to_db !(node.global_state);
                     Lwt_mutex.unlock node.global_state_mutex;
+
+                    let* () = Lwt_mutex.lock node.contract_state_mutex in
+                    node.contract_state := {
+                      !(node.contract_state) with trie = updated_contract_trie;
+                    };
+                    State.flush_trie_to_db !(node.contract_state);
+                    Lwt_mutex.unlock node.contract_state_mutex;
+
+                    let* () = Lwt_mutex.lock node.receipt_state_mutex in
+                    node.receipt_state := {
+                      !(node.receipt_state) with trie = updated_receipt_trie;
+                    };
+                    State.flush_trie_to_db !(node.receipt_state);
+                    Lwt_mutex.unlock node.receipt_state_mutex;
 
                     Lwt.return_true
                   | Error msg ->
@@ -407,9 +449,6 @@ module Features = struct
         in
         let state_root = MKPTrie.hash updated_state_trie in
         let receipt_root = MKPTrie.hash updated_receipt_trie in
-
-        Printf.printf "global_state_root: %s\n" state_root;
-        Printf.printf "receipt_root: %s\n" receipt_root;
 
         (* update blockchain *)        
         let* () = Lwt_mutex.lock node.blockchain_mutex in
@@ -510,9 +549,6 @@ module Features = struct
     let state_root = MKPTrie.hash updated_state_trie in
     let receipt_root = MKPTrie.hash updated_receipt_trie in
 
-    Printf.printf "global_state_root: %s\n" state_root;
-    Printf.printf "receipt_root: %s\n" receipt_root;
-
     let rec mine nonce =
       let* _ = Lwt.pause () in
       let candidate_block = {
@@ -544,7 +580,7 @@ module Features = struct
     let threshold = 0 in
     Random.init (int_of_string (Sys.getenv "ENTROPY_POOL"));
     let rec aux () =
-      let time_delay = float_of_int ((Random.int 2) + 0) in
+      let time_delay = float_of_int ((Random.int 10) + 5) in
       let* () = Lwt_mutex.lock node.mining_mutex in
       let mining = !(node.mining) in
       Lwt_mutex.unlock node.mining_mutex;
@@ -701,7 +737,7 @@ end
 
 let new_node node_addr miner_addr known_peers =
   let open Block in
-  
+
   let genesis = {
     index = 0;
     previous_hash = "";
