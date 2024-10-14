@@ -9,10 +9,10 @@
 )
 
 ; TODO: fix block tests
-; (test
-;  (name test_block)
-;  (libraries agora_core alcotest)
-; )
+(test
+ (name test_block)
+ (libraries agora_core alcotest)
+)
 
 (test
  (name test_rlp)

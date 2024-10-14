@@ -11,11 +11,13 @@ let sample_account = {
   code_hash = "code_hash";
 } 
 
-let mkptrie_testable : MKPTrie.trie Alcotest.testable =
+let mkptrie_testable : MKPTrie.t Alcotest.testable =
     Alcotest.of_pp Fmt.nop
 
-let result_testable : (MKPTrie.trie, string) result Alcotest.testable =
+let result_testable : (MKPTrie.t, string) result Alcotest.testable =
     Alcotest.result mkptrie_testable Alcotest.string
+
+let vm_fun (_) = "mocked_vm_output"
 
 let test_string_of_account () =
   let result = string_of_account sample_account in
@@ -104,16 +106,24 @@ let test_apply_transaction () =
     code_hash = "";
   } in
 
-  let expected_trie =
+  let expected_global_trie =
     match MKPTrie.insert 
       (MKPTrie.insert (Some initial_trie) updated_sender_acc.address (encode updated_sender_acc))
       receiver_acc.address (encode receiver_acc) with
-    | Some trie -> Ok (Some trie)
+    | Some trie -> (Some trie)
     | None -> failwith "Failed to insert updated accounts into expected trie"
   in
 
-  let result = apply_transaction (Some initial_trie) transaction in
-  (check result_testable) "Transaction applied correctly" expected_trie result
+  let (result_global_trie, _, _) = 
+    apply_transaction 
+      "miner_addr"
+      (Some initial_trie)
+      None
+      None
+      transaction
+      vm_fun
+  in
+  (check mkptrie_testable) "Transaction applied correctly" expected_global_trie result_global_trie
 
 let test_apply_transaction_coinbase () =
   let trie = None in
@@ -129,7 +139,7 @@ let test_apply_transaction_coinbase () =
     signature = "";
   } in
 
-  let result = apply_transaction_coinbase trie coinbase_tx in
+  let result = apply_transaction_coinbase trie None coinbase_tx in
   
   let receiver_acc = {
     address = "223";
