@@ -1,31 +1,10 @@
 (*
 TODO:
-  - [x] node
-  - [x] consensus (forks and conflicts)
-  - [x] JsonRPC (single request)
-  - [ ] JsonRPC (batch request)
-  - [ ] smart contracts
-    - [ ] VM
-      - [ ] logs
-    - [ ] agora lang
-    - [x] deploy contracts
-    - [x] contract execution
-  - [x] transaction fees
-    - [x] transact fees
-    - [x] revert fees on chain split
-  - [ ] transaction receipt
-  - [ ] receipts trie
-  - [x] configs via .env
-  - [ ] tests
-    - [x] pow
-    - [x] transaction
-    - [x] block
-    - [x] state
-        - [x] RLP
-        - [x] MKPTrie
-        - [x] account
-        - [ ] node
-        - [ ] jsonrpc
+  - [ ] JsonRPC (batch requests) ???
+  - [ ] VM
+    - [ ] events
+    - [ ] return state changes
+  - [ ] agora lang compiler
  *)
 
 open Agora_core.Node

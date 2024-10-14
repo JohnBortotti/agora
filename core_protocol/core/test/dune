@@ -8,7 +8,6 @@
  (libraries agora_core alcotest)
 )
 
-; TODO: fix block tests
 (test
  (name test_block)
  (libraries agora_core alcotest)

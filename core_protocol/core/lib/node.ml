@@ -1,36 +1,9 @@
 (*
 TODO:
-  - [x] main loop
-    - [x] handle incoming transactions
-    - [x] list transaction_pool
-    - [x] mine
-      - [x] filter validated txs
-      - [x] write and hash block
-      - [x] compute nonce
-      - [x] calculate difficulty based on prev blocks
-      - [x] append mined_block
-      - [x] broadcast mined block
-    - [x] handle incoming block proposal 
-      - [x] suspend current block mining (node.mining)
-      - [x] validate block
-      - [x] broadcast proposed block (if valid)
-  - [x] state 
-    - [x] account global state (balance, nonce, storageRoot, codeHash)
-    - [x] add miner fee after block inclusion
-    - [x] apply coinbase transaction on state
-    - [x] front-end account explorer
-    - [x] front-ent account consensus
-    - [x] reverse transactions if network choose another block
-    - [x] tool to generate transactions (wallet)
-    - [x] re-broadcast incoming blocks
   - [ ] fixes
-    - [x] "Lwt_mvar.take node.blockchain" -> use a mutex instead
     - [ ] optimize block broadcasting (a lot of repeated requests)
-    - [x] validate transaction
     - [ ] singleton Secp256k1 context
     - [ ] gossip protocol
-    - [x] paginate /chain endpoint
-    - [x] add transactions.hash field
  *)
 
 open Transaction
