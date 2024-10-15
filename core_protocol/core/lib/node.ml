@@ -65,11 +65,13 @@ module Features = struct
         let contract_state = !(node.contract_state) in
         Lwt_mutex.unlock node.contract_state_mutex;
 
-        let contract_state = State.get_from_db contract_state contract_acc_data.code_hash in
-        (match contract_state with
-        | None -> Lwt.return (`Assoc [ ("error", `String "Contract code not found") ])
-        | Some (`String code) -> Lwt.return (`Assoc [ ("code", `String code) ])
-        | _ -> failwith "Invalid RLP encoding for contract code")
+        (match MKPTrie.lookup contract_state.trie contract_acc_data.code_hash with
+        | Some (Leaf (_, code_data))
+        | Some (Branch (_, Some code_data)) ->
+            (match (RLP.decode code_data) with
+            | `String code -> Lwt.return (`Assoc [ ("code", `String code) ])
+            | _ -> failwith "Invalid RLP encoding for contract code")
+        | _ -> Lwt.return (`Assoc [ ("error", `String "Contract code not found") ]))
     | _ -> Lwt.return (`Assoc [ ("error", `String "Account not found") ])
     
 

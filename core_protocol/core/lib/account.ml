@@ -183,7 +183,7 @@ module Account = struct
           (* contract execution *)
           if receiver_account.code_hash <> "" then begin
             let vm_res = vm_fun tx in
-            Printf.printf "[Ocaml tx_apply] VM %s finished execution\n" vm_res;
+            Printf.printf "[Ocaml tx_apply] VM finished execution: \n %s \n\n" vm_res;
             (* TODO: add VM logs on receipt *)
 
             let mocked_receipt_ok = {
