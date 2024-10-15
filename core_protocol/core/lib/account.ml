@@ -60,7 +60,7 @@ module Account = struct
     | None -> 
       let receipt = {
         transaction_hash = tx.hash;
-        result = Failure;
+        status = false;
         message = "Sender account not found";
         gas_used = 0;
         logs = [];
@@ -118,7 +118,7 @@ module Account = struct
             | Some _ -> 
               let receipt = {
                 transaction_hash = tx.hash;
-                result = Failure;
+                status = false;
                 message = "Contract address already in use";
                 gas_used = 0;
                 logs = [];
@@ -151,7 +151,7 @@ module Account = struct
               (* storing the receipt on receipt_state*)
               let receipt = {
                 transaction_hash = tx.hash;
-                result = Success;
+                status = true;
                 message = "Contract created";
                 gas_used = 0;
                 logs = [];
@@ -188,7 +188,7 @@ module Account = struct
 
             let mocked_receipt_ok = {
               transaction_hash = tx.hash;
-              result = Success;
+              status = true;
               message = "Contract executed";
               gas_used = 0;
               logs = [];
@@ -204,7 +204,7 @@ module Account = struct
           else 
             let receipt = {
               transaction_hash = tx.hash;
-              result = Success;
+              status = true;
               message = "Normal transaction";
               gas_used = 0;
               logs = [];
@@ -228,7 +228,7 @@ module Account = struct
   let apply_transaction_coinbase global_state_trie receipt_trie tx: (MKPTrie.t * MKPTrie.t) =
     let receipt = {
       transaction_hash = tx.hash;
-      result = Success;
+      status = true;
       message = "Coinbase transaction";
       gas_used = 0;
       logs = [];

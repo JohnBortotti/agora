@@ -20,11 +20,9 @@ type event = {
   data: string;
 }
 
-type transaction_result = Success | Failure
-
 type receipt = {
   transaction_hash: string;
-  result: transaction_result;
+  status: bool;
   message: string;
   gas_used: int;
   logs: event list;
@@ -187,7 +185,7 @@ let transaction_of_json json: t =
   let encode_receipt receipt =
     `List [
       `String receipt.transaction_hash;
-      `String (match receipt.result with Success -> "Success" | Failure -> "Failure");
+      `String (string_of_bool receipt.status);
       `String (string_of_int receipt.gas_used);
       `List (List.map encode_event receipt.logs);
       `String receipt.bloom_filter;

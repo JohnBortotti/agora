@@ -17,10 +17,10 @@ type event = {
   topics: string list;
   data: string;
 }
-type transaction_result = Success | Failure
+ 
 type receipt = {
   transaction_hash: string;
-  result: transaction_result;
+  status: bool;
   message: string;
   gas_used: int;
   logs: event list;
