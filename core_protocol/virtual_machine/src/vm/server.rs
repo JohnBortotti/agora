@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 use super::vm_core::{VM, Transaction};
+use super::ocaml_callback::RealOcamlCallback;
 use std::sync::mpsc::{Sender, channel, Receiver};
 
 pub type VMTable = Arc<RwLock<HashMap<Uuid, Sender<String>>>>;
@@ -21,7 +22,7 @@ impl VMServer {
   pub fn spawn_vm(&self, transaction: Transaction) -> String {
     let vm_id = Uuid::new_v4();
     let (tx, rx): (Sender<String>, Receiver<String>) = channel();
-    let mut vm = VM::new(vm_id, rx, transaction);
+    let mut vm = VM::new(vm_id, rx, transaction, Box::new(RealOcamlCallback));
 
     {
       let mut vms = self.vm_table.write().unwrap();

@@ -9,8 +9,8 @@ let rust_lib = Dl.dlopen ~filename:target_path ~flags:[Dl.RTLD_NOW]
 let ffi_create_vm_server = foreign ~from:rust_lib "ffi_create_vm_server" (void @-> returning (ptr void))
 
 let ffi_spawn_vm =
-  foreign ~from:rust_lib  "ffi_spawn_vm"
-    (ptr void @-> string @-> string @-> string @-> int32_t @-> int32_t @-> int32_t @-> int32_t @-> string @-> string @-> returning string)
+  foreign ~from:rust_lib "ffi_spawn_vm"
+    (ptr void @-> string @-> string @-> string @-> string @-> string @-> string @-> string @-> string @-> string @-> returning string)
 
 let ffi_send_data_to_vm = 
   foreign ~from:rust_lib "ffi_send_data_to_vm" (ptr void @-> string @-> string @-> returning void)
@@ -57,7 +57,12 @@ module VM = struct
       Printf.printf "VM server destroyed successfully.\n";
     )
 
+  (* TODO: change ocaml integers to U256 *)
   let execute_vm tx callback_fn =
+    let int32_to_hex_str value =
+      Printf.sprintf "0x%lx" value
+    in
+
     let open Transaction in
     let server = create callback_fn in
     let res = spawn_vm
@@ -65,10 +70,10 @@ module VM = struct
       tx.hash
       tx.sender
       tx.receiver
-      (Int32.of_int tx.amount)
-      (Int32.of_int tx.gas_limit)
-      (Int32.of_int tx.gas_price)
-      (Int32.of_int tx.nonce)
+      (int32_to_hex_str (Int32.of_int tx.amount))
+      (int32_to_hex_str (Int32.of_int tx.gas_limit))
+      (int32_to_hex_str (Int32.of_int tx.gas_price))
+      (int32_to_hex_str (Int32.of_int tx.nonce))
       tx.payload
       tx.signature
     in

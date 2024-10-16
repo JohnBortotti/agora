@@ -1,12 +1,14 @@
 use uuid::Uuid;
+use ethnum::U256;
 use std::collections::HashMap;
-use ocaml_sys::{caml_callback2, caml_copy_string, caml_named_value, Value};
-use std::ffi::CString;
 use serde::Serialize;
 use serde_json::json;
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use super::super::{jsonrpc, jsonrpc::JsonRpcResponse};
 use super::event::Event;
+use super::instruction;
+use super::instruction::Instruction;
+use super::ocaml_callback::{OcamlCallback, MockOcamlCallback};
 
 #[derive(Serialize, Debug)]
 pub struct OverlayedChangeSet {
@@ -22,7 +24,7 @@ pub struct OverlayedChangeSet {
 pub struct InternalTransaction {
   pub sender: String,
   pub receiver: String,
-  pub amount: i32,
+  pub amount: U256,
 }
 
 #[derive(Debug, Clone)]
@@ -30,10 +32,10 @@ pub struct Transaction {
   pub hash: String,
   pub sender: String,
   pub receiver: String,
-  pub amount: i32,
-  pub gas_limit: i32,
-  pub gas_price: i32,
-  pub nonce: i32,
+  pub amount: U256,
+  pub gas_limit: U256,
+  pub gas_price: U256,
+  pub nonce: U256,
   pub payload: String,
   pub signature: String,
 }
@@ -42,62 +44,13 @@ pub struct VM {
   pub id: Uuid,
   pub rx: Receiver<String>,
   pub transaction: Transaction,
-  pub storage: HashMap<String, i32>,
-  pub stack: Vec<i32>,
+  pub storage: HashMap<String, U256>,
+  pub stack: Vec<U256>,
+  pub memory: Vec<u8>,
+  pub pc: usize,
+  ocaml_callback: Box<dyn OcamlCallback>
 }
 
-#[derive(Debug)]
-pub enum Instruction {
-  // stack Operations
-  Push { value: i32 },
-  Pop,
-
-  // arithmetic Operations
-  Add,
-  Sub,
-  Mul,
-  Div,
-  Mod,
-
-  // comparison Operations
-  Eq,
-  Ne,
-  Lt,
-  Gt,
-  Le,
-  Ge,
-
-  // bitwise Operations
-  And,
-  Or,
-  Xor,
-  Not,
-  Shl { shift: u8 },
-  Shr { shift: u8 },
-
-  // storage Operations
-  Set { key: String },
-  Get { key: String },
-
-  // control Flow Operations
-  Jump { destination: usize },
-  JumpIf { destination: usize },
-  Halt,
-
-  // call/message operations
-  Call { address: String, gas_limit: i32, value: i32 },
-  Transaction { sender: String, receiver: String, amount: i32 },
-  Emit { event_name: String, data: Vec<i32> },
-  Return,
-
-  // environment operations
-  GetBalance { address: String },
-  GetCaller,
-  GetCallValue,
-  GetGasPrice,
-  GetBlockNumber,
-  GetBlockTimestamp,
-}
 
 // TODO: 
 // - [ ] nested contract calls
@@ -110,13 +63,16 @@ pub enum Instruction {
 // - [ ] emit events
 
 impl VM {
-  pub fn new(id: Uuid, rx: Receiver<String>, transaction: Transaction) -> Self {
+  pub fn new(id: Uuid, rx: Receiver<String>, transaction: Transaction, ocaml_callback: Box<dyn OcamlCallback>) -> Self {
     VM {
       id,
       rx,
       transaction,
       storage: HashMap::new(),
-      stack: vec!()
+      stack: vec!(),
+      memory: vec!(),
+      pc: 0,
+      ocaml_callback
     }
   }
 
@@ -131,12 +87,12 @@ impl VM {
 
       println!("[VM] fetched program: {}\n", program.as_ref().unwrap());
 
-      let bytecode = self.parse_program_to_bytecode(program.as_ref().unwrap());
+      let bytecode = Self::parse_program_to_bytecode(program.as_ref().unwrap());
       if let Err(err) = &bytecode {
         (false, format!("Failed to parse program to bytecode: {}", err));
       }
 
-      let instructions = self.decode_bytecode(bytecode.as_ref().unwrap());
+      let instructions = instruction::decode_bytecode_to_instruction(bytecode.as_ref().unwrap());
       if let Err(err) = &instructions {
         (false, format!("Failed to decode bytecode: {}\n", err));
       }
@@ -159,7 +115,7 @@ impl VM {
     vec![change_set]
   }
 
-  pub fn parse_program_to_bytecode(&self, program: &str) -> Result<Vec<u8>, String> {
+  pub fn parse_program_to_bytecode(program: &str) -> Result<Vec<u8>, String> {
     let mut bytecode = Vec::new();
     let mut i = 0;
 
@@ -181,304 +137,21 @@ impl VM {
     Ok(bytecode)
   }
 
-  pub fn decode_bytecode(&self, bytecode: &[u8]) -> Result<Vec<Instruction>, String> {
-    let mut instructions = Vec::new();
-    let mut i = 0;
-
-    while i < bytecode.len() {
-      match bytecode[i] {
-        // stack Operations
-        0x01 => {
-          if i + 4 >= bytecode.len() {
-            return Err("Push instruction expects a 4-byte value".to_string());
-          }
-
-          let value = i32::from_be_bytes([bytecode[i + 1], bytecode[i + 2], bytecode[i + 3], bytecode[i + 4]]);
-          instructions.push(Instruction::Push { value });
-          i += 5;
-        }
-        0x02 => {
-          instructions.push(Instruction::Pop);
-          i += 1;
-        }
-
-        // arithmetic Operations
-        0x03 => {
-          instructions.push(Instruction::Add);
-          i += 1;
-        }
-        0x04 => {
-          instructions.push(Instruction::Sub);
-          i += 1;
-        }
-        0x05 => {
-          instructions.push(Instruction::Mul);
-          i += 1;
-        }
-        0x06 => {
-          instructions.push(Instruction::Div);
-          i += 1;
-        }
-        0x07 => {
-          instructions.push(Instruction::Mod);
-          i += 1;
-        }
-
-        // comparison Operations
-        0x10 => {
-          instructions.push(Instruction::Eq);
-          i += 1;
-        }
-        0x11 => {
-          instructions.push(Instruction::Ne);
-          i += 1;
-        }
-        0x12 => {
-          instructions.push(Instruction::Lt);
-          i += 1;
-        }
-        0x13 => {
-          instructions.push(Instruction::Gt);
-          i += 1;
-        }
-        0x14 => {
-          instructions.push(Instruction::Le);
-          i += 1;
-        }
-        0x15 => {
-          instructions.push(Instruction::Ge);
-          i += 1;
-        }
-
-        // bitwise Operations
-        0x20 => {
-          instructions.push(Instruction::And);
-          i += 1;
-        }
-        0x21 => {
-          instructions.push(Instruction::Or);
-          i += 1;
-        }
-        0x22 => {
-          instructions.push(Instruction::Xor);
-          i += 1;
-        }
-        0x23 => {
-          instructions.push(Instruction::Not);
-          i += 1;
-        }
-        0x24 => {
-          if i + 1 >= bytecode.len() {
-            return Err("Shl instruction expects a shift value".to_string());
-          }
-          let shift = bytecode[i + 1];
-          instructions.push(Instruction::Shl { shift });
-          i += 2;
-        }
-        0x25 => {
-          if i + 1 >= bytecode.len() {
-            return Err("Shr instruction expects a shift value".to_string());
-          }
-          let shift = bytecode[i + 1];
-          instructions.push(Instruction::Shr { shift });
-          i += 2;
-        }
-
-        // storage Operations
-        0x30 => {
-          if i + 33 > bytecode.len() {
-            return Err("Set instruction expects a key length prefix and key string".to_string());
-          }
-          let key_len = bytecode[i + 1] as usize;
-          if i + 2 + key_len > bytecode.len() {
-            return Err("Key length exceeds remaining bytecode length".to_string());
-          }
-          let key = String::from_utf8(bytecode[i + 2..i + 2 + key_len].to_vec())
-            .map_err(|_| "Failed to decode key as UTF-8".to_string())?;
-          instructions.push(Instruction::Set { key });
-          i += 2 + key_len;
-        }
-        0x31 => {
-          if i + 33 > bytecode.len() {
-            return Err("Get instruction expects a key length prefix and key string".to_string());
-          }
-          let key_len = bytecode[i + 1] as usize;
-          if i + 2 + key_len > bytecode.len() {
-            return Err("Key length exceeds remaining bytecode length".to_string());
-          }
-          let key = String::from_utf8(bytecode[i + 2..i + 2 + key_len].to_vec())
-            .map_err(|_| "Failed to decode key as UTF-8".to_string())?;
-          instructions.push(Instruction::Get { key });
-          i += 2 + key_len;
-        }
-
-        // control Flow Operations
-        0x40 => {
-          if i + 4 >= bytecode.len() {
-            return Err("Jump instruction expects a 4-byte destination".to_string());
-          }
-          let destination = usize::from_be_bytes([0, 0, 0, 0, bytecode[i + 1], bytecode[i + 2], bytecode[i + 3], bytecode[i + 4]]);
-          instructions.push(Instruction::Jump { destination });
-          i += 5;
-        }
-        0x41 => {
-          if i + 4 >= bytecode.len() {
-            return Err("JumpIf instruction expects a 4-byte destination".to_string());
-          }
-          let destination = usize::from_be_bytes([0, 0, 0, 0, bytecode[i + 1], bytecode[i + 2], bytecode[i + 3], bytecode[i + 4]]);
-          instructions.push(Instruction::JumpIf { destination });
-          i += 5;
-        }
-        0x42 => {
-          instructions.push(Instruction::Halt);
-          i += 1;
-        }
-
-        // call/Message Operations
-        0x50 => {
-          if i + 9 >= bytecode.len() {
-            return Err("Call instruction expects address, gas limit, and value".to_string());
-          }
-          let address = String::from_utf8(bytecode[i + 1..i + 5].to_vec()).map_err(|_| "Invalid address".to_string())?;
-          let gas_limit = i32::from_be_bytes([bytecode[i + 5], bytecode[i + 6], bytecode[i + 7], bytecode[i + 8]]);
-          let value = i32::from_be_bytes([bytecode[i + 9], bytecode[i + 10], bytecode[i + 11], bytecode[i + 12]]);
-          instructions.push(Instruction::Call { address, gas_limit, value });
-          i += 13;
-        },
-        0x70 => {
-          // ensure there's enough data for the event name length and at least one data entry
-          if i + 2 >= bytecode.len() {
-            return Err("Emit instruction expects an event name length prefix and event data".to_string());
-          }
-
-          // get event name length
-          let name_len = bytecode[i + 1] as usize;
-          if i + 2 + name_len > bytecode.len() {
-            return Err("Event name length exceeds remaining bytecode length".to_string());
-          }
-
-          // extract event name
-          let event_name = String::from_utf8(bytecode[i + 2..i + 2 + name_len].to_vec())
-            .map_err(|_| "Failed to decode event name as UTF-8".to_string())?;
-          i += 2 + name_len;
-
-          // now extract data (let's assume data is a series of 4-byte integers)
-          let mut data = Vec::new();
-          while i + 4 <= bytecode.len() {
-            let value = i32::from_be_bytes([bytecode[i], bytecode[i + 1], bytecode[i + 2], bytecode[i + 3]]);
-            data.push(value);
-            i += 4;
-          }
-
-          instructions.push(Instruction::Emit { event_name, data });
-        },
-        0x51 => {
-          if i + 8 >= bytecode.len() {
-            return Err("Transaction instruction expects sender, receiver, and amount".to_string());
-          }
-          let sender = String::from_utf8(bytecode[i + 1..i + 5].to_vec()).map_err(|_| "Invalid sender".to_string())?;
-          let receiver = String::from_utf8(bytecode[i + 5..i + 9].to_vec()).map_err(|_| "Invalid receiver".to_string())?;
-          let amount = i32::from_be_bytes([bytecode[i + 9], bytecode[i + 10], bytecode[i + 11], bytecode[i + 12]]);
-          instructions.push(Instruction::Transaction { sender, receiver, amount });
-          i += 13;
-        }
-        0x52 => {
-          instructions.push(Instruction::Return);
-          i += 1;
-        }
-
-        // environment Operations
-        0x60 => {
-          if i + 4 > bytecode.len() {
-            return Err("GetBalance expects an address".to_string());
-          }
-          let address = String::from_utf8(bytecode[i + 1..i + 5].to_vec()).map_err(|_| "Invalid address".to_string())?;
-          instructions.push(Instruction::GetBalance { address });
-          i += 5;
-        }
-        0x61 => {
-          instructions.push(Instruction::GetCaller);
-          i += 1;
-        }
-        0x62 => {
-          instructions.push(Instruction::GetCallValue);
-          i += 1;
-        }
-        0x63 => {
-          instructions.push(Instruction::GetGasPrice);
-          i += 1;
-        }
-        0x64 => {
-          instructions.push(Instruction::GetBlockNumber);
-          i += 1;
-        }
-        0x65 => {
-          instructions.push(Instruction::GetBlockTimestamp);
-          i += 1;
-        }
-
-        _ => {
-          return Err(format!("Unknown opcode: 0x{:02x}", bytecode[i]));
-        }
-      }
-    }
-
-    Ok(instructions)
-  }
-
-  fn execute_program(&mut self, program: &[Instruction], gas_limit: i32) -> Result<(), String> {
+  fn execute_program(&mut self, program: &[Instruction], gas_limit: U256) -> Result<(), String> {
     let mut gas_limit = gas_limit;
 
-    for opcode in program {
-      let gas_cost = Self::get_instruction_gas_cost(opcode);
-      if gas_limit < gas_cost {
-        return Err("Out of gas".to_string())
+    while self.pc < program.len() {
+      let opcode = &program[self.pc];
+      let gas_cost = instruction::get_instruction_gas_cost(opcode);
+
+      if gas_limit < U256::from(gas_cost) {
+        return Err("Out of gas".to_string());
       }
 
-      gas_limit = gas_limit - gas_cost;
+      gas_limit = gas_limit - U256::from(gas_cost);
       self.execute_instruction(opcode)?;
     }
     Ok(())
-  }
-
-  fn get_instruction_gas_cost(instruction: &Instruction) -> i32 {
-    match instruction {
-      // arithmetic Operations
-      Instruction::Add | Instruction::Sub | Instruction::Mul 
-        | Instruction::Div | Instruction::Mod => 3,
-
-      // stack Operations
-      Instruction::Push { .. } | Instruction::Pop => 2,
-
-      // comparison Operations
-      Instruction::Eq | Instruction::Ne | Instruction::Lt 
-        | Instruction::Gt | Instruction::Le | Instruction::Ge => 4,
-
-      // bitwise Operations
-      Instruction::And | Instruction::Or | Instruction::Xor | Instruction::Not => 3,
-      Instruction::Shl { .. } | Instruction::Shr { .. } => 4,
-
-      // storage Operations
-      Instruction::Set { .. } | Instruction::Get { .. } => 5,
-
-      // control Flow Operations
-      Instruction::Jump { .. } | Instruction::JumpIf { .. } => 8,
-      Instruction::Halt => 1,
-
-      // call/Message Operations
-      Instruction::Call { .. } => 10,
-      Instruction::Transaction { .. } => 12,
-      Instruction::Emit { .. } => 10,
-      Instruction::Return => 5,
-
-      // environment Operations
-      Instruction::GetBalance { .. } => 6,
-      Instruction::GetCaller => 4,
-      Instruction::GetCallValue => 4,
-      Instruction::GetGasPrice => 4,
-      Instruction::GetBlockNumber => 4,
-      Instruction::GetBlockTimestamp => 4,
-    }
   }
 
   fn execute_instruction(&mut self, instruction: &Instruction) -> Result<(), String> {
@@ -487,11 +160,13 @@ impl VM {
       Instruction::Push { value } => {
         self.stack.push(*value);
         println!("[VM] PUSH {}", value);
+        self.pc += 1;
         Ok(())
       }
       Instruction::Pop => {
         if let Some(value) = self.stack.pop() {
           println!("[VM] POP {}", value);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] POP failed: stack is empty".to_string())
@@ -504,6 +179,7 @@ impl VM {
           let result = a + b;
           self.stack.push(result);
           println!("[VM] ADD {} + {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] ADD failed: insufficient operands on stack".to_string())
@@ -514,6 +190,7 @@ impl VM {
           let result = b - a;
           self.stack.push(result);
           println!("[VM] SUB {} - {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] SUB failed: insufficient operands on stack".to_string())
@@ -524,6 +201,7 @@ impl VM {
           let result = a * b;
           self.stack.push(result);
           println!("[VM] MUL {} * {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] MUL failed: insufficient operands on stack".to_string())
@@ -532,14 +210,15 @@ impl VM {
       Instruction::Div => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           if a == 0 {
-        println!("[VM] DIV failed: division by zero");
-        self.stack.push(0);
-        Err("[VM] DIV failed: division by zero".to_string())
+            println!("[VM] DIV failed: division by zero");
+            self.stack.push(U256::from(0 as u64));
+            Err("[VM] DIV failed: division by zero".to_string())
           } else {
-        let result = b / a;
-        self.stack.push(result);
-        println!("[VM] DIV {} / {} = {}", b, a, result);
-        Ok(())
+            let result = b / a;
+            self.stack.push(result);
+            println!("[VM] DIV {} / {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(())
           }
         } else {
           Err("[VM] DIV failed: insufficient operands on stack".to_string())
@@ -548,26 +227,29 @@ impl VM {
       Instruction::Mod => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           if a == 0 {
-        println!("[VM] MOD failed: division by zero");
-        self.stack.push(0);
-        Err("[VM] MOD failed: division by zero".to_string())
+            println!("[VM] MOD failed: division by zero");
+            self.stack.push(U256::from(0 as u64));
+            Err("[VM] MOD failed: division by zero".to_string())
           } else {
-        let result = b % a;
-        self.stack.push(result);
-        println!("[VM] MOD {} % {} = {}", b, a, result);
-        Ok(())
+            let result = b % a;
+            self.stack.push(result);
+            println!("[VM] MOD {} % {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(())
           }
         } else {
           Err("[VM] MOD failed: insufficient operands on stack".to_string())
         }
       }
 
-      // comparison operations
+      // logical/comparison operations
+      // TODO: AND, OR, NOT, XOR
       Instruction::Eq => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if a == b { 1 } else { 0 };
-          self.stack.push(result);
+          let result = if a == b { 1 as u64 } else { 0 as u64 };
+          self.stack.push(result.into());
           println!("[VM] EQ {} == {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] EQ failed: insufficient operands on stack".to_string())
@@ -575,9 +257,10 @@ impl VM {
       }
       Instruction::Ne => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if a != b { 1 } else { 0 };
-          self.stack.push(result);
+          let result = if a != b { 1 as u64 } else { 0 as u64 };
+          self.stack.push(result.into());
           println!("[VM] NE {} != {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] NE failed: insufficient operands on stack".to_string())
@@ -585,9 +268,10 @@ impl VM {
       }
       Instruction::Lt => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if b < a { 1 } else { 0 };
-          self.stack.push(result);
+          let result = if b < a { 1 as u64 } else { 0 as u64 };
+          self.stack.push(result.into());
           println!("[VM] LT {} < {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] LT failed: insufficient operands on stack".to_string())
@@ -596,8 +280,9 @@ impl VM {
       Instruction::Gt => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           let result = if b > a { 1 } else { 0 };
-          self.stack.push(result);
+          self.stack.push(U256::from(result as u64));
           println!("[VM] GT {} > {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] GT failed: insufficient operands on stack".to_string())
@@ -606,8 +291,9 @@ impl VM {
       Instruction::Le => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           let result = if b <= a { 1 } else { 0 };
-          self.stack.push(result);
+          self.stack.push(U256::from(result as u64));
           println!("[VM] LE {} <= {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] LE failed: insufficient operands on stack".to_string())
@@ -616,8 +302,9 @@ impl VM {
       Instruction::Ge => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           let result = if b >= a { 1 } else { 0 };
-          self.stack.push(result);
+          self.stack.push(U256::from(result as u64));
           println!("[VM] GE {} >= {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] GE failed: insufficient operands on stack".to_string())
@@ -625,41 +312,45 @@ impl VM {
       }
 
       // bitwise operations
-      Instruction::And => {
+      Instruction::BAnd => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           let result = a & b;
           self.stack.push(result);
           println!("[VM] AND {} & {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] AND failed: insufficient operands on stack".to_string())
         }
       }
-      Instruction::Or => {
+      Instruction::BOr => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           let result = a | b;
           self.stack.push(result);
           println!("[VM] OR {} | {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] OR failed: insufficient operands on stack".to_string())
         }
       }
-      Instruction::Xor => {
+      Instruction::BXor => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           let result = a ^ b;
           self.stack.push(result);
           println!("[VM] XOR {} ^ {} = {}", b, a, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] XOR failed: insufficient operands on stack".to_string())
         }
       }
-      Instruction::Not => {
+      Instruction::BNot => {
         if let Some(a) = self.stack.pop() {
           let result = !a;
           self.stack.push(result);
           println!("[VM] NOT !{}", a);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] NOT failed: insufficient operands on stack".to_string())
@@ -670,6 +361,7 @@ impl VM {
           let result = a << shift;
           self.stack.push(result);
           println!("[VM] SHL {} << {} = {}", a, shift, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] SHL failed: insufficient operands on stack".to_string())
@@ -680,6 +372,7 @@ impl VM {
           let result = a >> shift;
           self.stack.push(result);
           println!("[VM] SHR {} >> {} = {}", a, shift, result);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] SHR failed: insufficient operands on stack".to_string())
@@ -691,6 +384,7 @@ impl VM {
         if let Some(value) = self.stack.pop() {
           self.storage.insert(key.clone(), value);
           println!("[VM] SET {} = {}", key, value);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] SET failed: insufficient operands on stack".to_string())
@@ -700,6 +394,7 @@ impl VM {
         if let Some(value) = self.storage.get(key) {
           self.stack.push(*value);
           println!("[VM] GET {} = {}", key, value);
+          self.pc += 1;
           Ok(())
         } else {
           Err("[VM] GET failed: key not found in storage".to_string())
@@ -709,12 +404,16 @@ impl VM {
       // control flow operations
       Instruction::Jump { destination } => {
         println!("[VM] JUMP {}", destination);
+        self.pc = *destination;
         Ok(())
       }
       Instruction::JumpIf { destination } => {
         if let Some(condition) = self.stack.pop() {
           if condition != 0 {
-        println!("[VM] JUMPIF {}", destination);
+            println!("[VM] JUMPIF {}", destination);
+            self.pc = *destination;
+          } else {
+            self.pc += 1;
           }
           Ok(())
         } else {
@@ -723,60 +422,72 @@ impl VM {
       }
       Instruction::Halt => {
         println!("[VM] HALT");
+        // TODO: halt
         Ok(())
       }
       
       // call/message operations
       Instruction::Call { address, gas_limit, value } => {
         println!("[VM] CALL {} {} {}", address, gas_limit, value);
+        self.pc += 1;
         Ok(())
       }
       Instruction::Transaction { sender, receiver, amount } => {
         println!("[VM] TRANSACTION {} {} {}", sender, receiver, amount);
         self.make_transaction(sender, *amount)?;
+        self.pc += 1;
         Ok(())
       }
       Instruction::Emit { event_name, data } => {
         println!("[VM] EMIT {} {:?}", event_name, data);
+        self.pc += 1;
         Ok(())
       }
       Instruction::Return => {
         println!("[VM] RETURN");
+        // TODO: halt
         Ok(())
       }
 
       // environment operations
       Instruction::GetBalance { address } => {
         println!("[VM] GETBALANCE {}", address);
+        self.pc += 1;
         Ok(())
       }
       Instruction::GetCaller => {
         println!("[VM] GETCALLER");
-        // self.stack.push(self.transaction.sender);
+        self.pc += 1;
         Ok(())
       }
       Instruction::GetCallValue => {
         println!("[VM] GETCALLVALUE");
         self.stack.push(self.transaction.amount);
+        self.pc += 1;
         Ok(())
       }
       Instruction::GetGasPrice => {
         println!("[VM] GETGASPRICE");
         self.stack.push(self.transaction.gas_price);
+        self.pc += 1;
         Ok(())
       }
       Instruction::GetBlockNumber => {
         println!("[VM] GETBLOCKNUMBER");
+        self.pc += 1;
         Ok(())
       }
       Instruction::GetBlockTimestamp => {
         println!("[VM] GETBLOCKTIMESTAMP");
+        self.pc += 1;
         Ok(())
       }
     }
   }
 
-  fn make_transaction(&self, receiver: &str, amount: i32) -> Result<InternalTransaction, String> {
+  // returns a internal transaction, if the VM returns an error to peer 
+  // we can discard the transaction, otherwise the node executes it
+  fn make_transaction(&self, receiver: &str, amount: U256) -> Result<InternalTransaction, String> {
     let sender = self.transaction.receiver.clone();
 
     let req = jsonrpc::serialize_request(
@@ -785,9 +496,10 @@ impl VM {
       );
 
     let res = self.json_rpc(req).unwrap();
-    let balance = res.result.unwrap()["balance"].take().as_i64().unwrap();
+    let balance = res.result.unwrap()["balance"].take();
+    let balance_u256 = U256::from_str_radix(balance.as_str().unwrap(), 10).unwrap();
 
-    if (balance as i32) < (amount as i32) {
+    if balance_u256 < amount {
       return Err("Insufficient balance".to_string())
     } else {
       Ok(InternalTransaction {
@@ -808,12 +520,11 @@ impl VM {
     Ok(code.to_string())
   }
 
-
   // internal function to make JSON-RPC request
   fn json_rpc(&self, json: String) -> Result<JsonRpcResponse, String> {
     println!("\n[VM] {} is making a JSON-RPC request: {}\n", self.id, json);
 
-    Self::call_ocaml_callback(&self.id.to_string(), &json);
+    self.ocaml_callback.call(&self.id.to_string(), &json);
 
     match self.rx.recv_timeout(std::time::Duration::from_secs(20)) {
       Ok(message) => {
@@ -833,25 +544,306 @@ impl VM {
       }
     };
   }
+}
 
-  // internal function to call OCaml callback (for JSON-RPC calls) 
-  fn call_ocaml_callback(vm_id: &str, json: &str) {
-    let vm_id_cstring = CString::new(vm_id).expect("Failed to create CString for vm_id");
-    let json_cstring = CString::new(json).expect("Failed to create CString for method");
+mod tests {
+  use super::*;
 
-    unsafe {
-      let vm_id_value: Value = caml_copy_string(vm_id_cstring.as_ptr());
-      let json_value: Value = caml_copy_string(json_cstring.as_ptr());
+  fn mock_vm() -> VM {
+    let channel = std::sync::mpsc::channel();
+    let ocaml_callback = Box::new(MockOcamlCallback);
+       
+    VM::new(Uuid::new_v4(), channel.1, Transaction {
+      hash: "hash".to_string(),
+      sender: "sender".to_string(),
+      receiver: "receiver".to_string(),
+      amount: U256::from(0 as u64),
+      gas_limit: U256::from(0 as u64),
+      gas_price: U256::from(0 as u64),
+      nonce: U256::from(0 as u64),
+      payload: "payload".to_string(),
+      signature: "signature".to_string(),
+    }, ocaml_callback
+  )}
 
-      let ocaml_callback_str = CString::new("ocaml_json_rpc_callback").unwrap();
-      let ocaml_callback_fn: *const Value =
-        caml_named_value(ocaml_callback_str.as_ptr());
+  #[test]
+  fn test_parse_program_to_bytecode() {
+    let program = "600160005260016000f3";
+    let bytecode = VM::parse_program_to_bytecode(program).unwrap();
+    assert_eq!(bytecode, vec![0x60, 0x01, 0x60, 0x00, 0x52, 0x60, 0x01, 0x60, 0x00, 0xf3]);
+  }
 
-      if !ocaml_callback_fn.is_null() {
-        caml_callback2(*ocaml_callback_fn, vm_id_value, json_value);
-      } else {
-        eprintln!("OCaml callback not found");
-      }
-    }
+  #[test]
+  fn test_invalid_program_to_bytecode() {
+    let program = "600160005260016000f";
+    let bytecode = VM::parse_program_to_bytecode(program);
+    assert_eq!(bytecode, Err("Program length must be even".to_string()));
+  }
+
+  #[test]
+  fn test_instruction_push() {
+    let mut vm = mock_vm();
+    let instruction = Instruction::Push { value: U256::from(2 as u64) };
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(2 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_pop() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::Pop;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, Vec::<U256>::new());
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_add() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(3 as u64));
+    let instruction = Instruction::Add;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(5 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_sub() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(3 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::Sub;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(1 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_mul() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(3 as u64));
+    let instruction = Instruction::Mul;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(6 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_div() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(6 as u64));
+    vm.stack.push(U256::from(3 as u64));
+    let instruction = Instruction::Div;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(2 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_div_by_zero() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(6 as u64));
+    vm.stack.push(U256::from(0 as u64));
+    let instruction = Instruction::Div;
+    let result = vm.execute_instruction(&instruction);
+    assert_eq!(result, Err("[VM] DIV failed: division by zero".to_string()));
+  }
+
+  #[test]
+  fn test_instruction_mod() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(6 as u64));
+    vm.stack.push(U256::from(4 as u64));
+    let instruction = Instruction::Mod;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(2 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_mod_by_zero() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(6 as u64));
+    vm.stack.push(U256::from(0 as u64));
+    let instruction = Instruction::Mod;
+    let result = vm.execute_instruction(&instruction);
+    assert_eq!(result, Err("[VM] MOD failed: division by zero".to_string()));
+  }
+
+  #[test]
+  fn test_instruction_eq() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::Eq;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(1 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_ne() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(3 as u64));
+    let instruction = Instruction::Ne;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(1 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_lt() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(3 as u64));
+    let instruction = Instruction::Lt;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(1 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_gt() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(3 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::Gt;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(1 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_ge() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(3 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::Ge;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(1 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_le() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(3 as u64));
+    let instruction = Instruction::Le;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(1 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_band() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(3 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::BAnd;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(2 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_bor() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(3 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::BOr;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(3 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_bxor() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(3 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::BXor;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(1 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  // #[test]
+  // fn test_instruction_bnot() {
+  //   let mut vm = mock_vm();
+  //   vm.stack.push(U256::from(3 as u64));
+  //   let instruction = Instruction::BNot;
+  //   vm.execute_instruction(&instruction).unwrap();
+  //   assert_eq!(vm.stack, vec![U256::from(0 as u64)]);
+  //   assert_eq!(vm.pc, 1);
+  // }
+
+  #[test]
+  fn test_instruction_shl() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(3 as u64));
+    let instruction = Instruction::Shl { shift: 1 };
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(6 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_shr() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(6 as u64));
+    let instruction = Instruction::Shr { shift: 1 };
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(3 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_set() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::Set { key : "key".to_string() }; 
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.storage, HashMap::from_iter(vec![("key".to_string(), U256::from(2 as u64))]));
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_jump() {
+    let mut vm = mock_vm();
+    let instruction = Instruction::Jump { destination: 7 };
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.pc, 7);
+  }
+
+  #[test]
+  fn test_instruction_jumpif() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(1 as u64));
+    let instruction = Instruction::JumpIf { destination: 7 };
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.pc, 7);
+  }
+
+  #[test]
+  fn test_instruction_jumpif_false() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(0 as u64));
+    let instruction = Instruction::JumpIf { destination: 7 };
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_halt() {
+    let mut vm = mock_vm();
+    let instruction = Instruction::Halt;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.pc, 0);
   }
 }

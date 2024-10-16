@@ -1,8 +1,8 @@
 mod jsonrpc;
 mod vm;
-mod u256;
 
 use vm::server::VMServer;
+use ethnum::U256;
 use vm::vm_core::Transaction;
 use std::ffi::{CStr, CString, c_char, c_void};
 use uuid::Uuid;
@@ -19,10 +19,10 @@ pub extern "C" fn ffi_spawn_vm(
   hash: *const c_char,
   sender: *const c_char,
   receiver: *const c_char,
-  amount: i32,
-  gas_limit: i32,
-  gas_price: i32,
-  nonce: i32,
+  amount: *const c_char, // passed as a hex string
+  gas_limit: *const c_char, // passed as a hex string
+  gas_price: *const c_char, // passed as a hex string
+  nonce: *const c_char, // passed as a hex string
   payload: *const c_char,
   signature: *const c_char,
   ) -> *mut c_char {
@@ -70,6 +70,18 @@ pub extern "C" fn ffi_spawn_vm(
     }
     CStr::from_ptr(signature).to_string_lossy().into_owned()
   };
+
+  let amount_str = unsafe { CStr::from_ptr(amount).to_string_lossy() };
+  let amount = U256::from_str_hex(&amount_str).expect("Invalid amount");
+
+  let gas_limit_str = unsafe { CStr::from_ptr(gas_limit).to_string_lossy() };
+  let gas_limit = U256::from_str_hex(&gas_limit_str).expect("Invalid gas limit");
+
+  let gas_price_str = unsafe { CStr::from_ptr(gas_price).to_string_lossy() };
+  let gas_price = U256::from_str_hex(&gas_price_str).expect("Invalid gas price");
+
+  let nonce_str = unsafe { CStr::from_ptr(nonce).to_string_lossy() };
+  let nonce = U256::from_str_hex(&nonce_str).expect("Invalid nonce");
 
   let transaction = Transaction {
     hash,

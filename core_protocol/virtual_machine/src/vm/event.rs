@@ -1,5 +1,5 @@
-use super::super::u256::U256;
 use serde::Serialize;
+use ethnum::U256;
 
 #[derive(Serialize, Debug)]
 pub struct Event {
