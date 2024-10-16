@@ -48,7 +48,9 @@ pub struct VM {
   pub stack: Vec<U256>,
   pub memory: Vec<u8>,
   pub pc: usize,
-  ocaml_callback: Box<dyn OcamlCallback>
+  pub events: Vec<Event>,
+  pub internal_transactions: Vec<InternalTransaction>,
+  ocaml_callback: Box<dyn OcamlCallback>,
 }
 
 
@@ -61,6 +63,25 @@ pub struct VM {
 //  - [ ] handle strings
 //  - [ ] handle dictionaries
 // - [ ] emit events
+//
+//
+// examples:
+//
+// 01                                                                // push
+// 000000000000000000000000000000000000000000000000000000000000000a  // 
+// 01                                                                // push
+// 0000000000000000000000000000000000000000000000000000000000000014  // push
+// 03                                                                // sum
+//
+// 70                                                                // emit
+// 08                                                                // event_name length (8 bytes)
+// 5472616e73666572                                                  // UTF-8 encoded "Transfer"
+// 0100000000000000000000000000000000000000000000000000000000000000  // Topic 1
+// 0200000000000000000000000000000000000000000000000000000000000000  // Topic 2
+// 0300000000000000000000000000000000000000000000000000000000000000  // Topic 3
+// 0000000000000000000000000000000000000000000000000000000000000020  // data lenght (32 bytes)
+// 000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F  // Event Data
+// 
 
 impl VM {
   pub fn new(id: Uuid, rx: Receiver<String>, transaction: Transaction, ocaml_callback: Box<dyn OcamlCallback>) -> Self {
@@ -72,7 +93,9 @@ impl VM {
       stack: vec!(),
       memory: vec!(),
       pc: 0,
-      ocaml_callback
+      events: vec!(),
+      internal_transactions: vec!(),
+      ocaml_callback,
     }
   }
 
@@ -120,6 +143,7 @@ impl VM {
     let mut i = 0;
 
     let program: String = program.chars()
+      .filter(|c| !c.is_whitespace())
       .filter(|c| c.is_ascii_hexdigit())
       .collect();
 
@@ -438,8 +462,20 @@ impl VM {
         self.pc += 1;
         Ok(())
       }
-      Instruction::Emit { event_name, data } => {
-        println!("[VM] EMIT {} {:?}", event_name, data);
+      Instruction::Emit { event_name, data, topic1, topic2, topic3 } => {
+        println!("[VM] EMIT: \n
+                 name: {}\n
+                 topic1: {}\n
+                 topic2\n {}\n
+                 topic3:{}\n
+                 data: {:?}",
+                 event_name, topic1, topic2, topic3, data);
+
+        self.events.push(Event {
+          address: self.transaction.receiver.clone(),
+          topics: vec![*topic1, *topic2, *topic3],
+          data: data.clone(),
+        });
         self.pc += 1;
         Ok(())
       }
@@ -845,5 +881,28 @@ mod tests {
     let instruction = Instruction::Halt;
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.pc, 0);
+  }
+
+  #[test]
+  fn test_instruction_emit() {
+    let mut vm = mock_vm();
+    let instruction = Instruction::Emit { 
+      event_name: "event".to_string(),
+      data: "data".to_string().into(),
+      topic1: U256::from(1 as u32),
+      topic2: U256::from(2 as u32),
+      topic3: U256::from(3 as u32),
+    };
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.events, vec![Event {
+      address: vm.transaction.receiver.clone(),
+      topics: vec![
+        U256::from(1 as u32),
+        U256::from(2 as u32),
+        U256::from(3 as u32),
+      ],
+      data: "data".to_string().into(),
+    }]);
+    assert_eq!(vm.pc, 1);
   }
 }

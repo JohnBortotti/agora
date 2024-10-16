@@ -1,7 +1,7 @@
 use serde::Serialize;
 use ethnum::U256;
 
-#[derive(Serialize, Debug)]
+#[derive(PartialEq, Serialize, Debug)]
 pub struct Event {
   pub address: String,
   pub topics: Vec<U256>,
