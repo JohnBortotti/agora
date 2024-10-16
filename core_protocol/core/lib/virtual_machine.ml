@@ -59,8 +59,8 @@ module VM = struct
 
   (* TODO: change ocaml integers to U256 *)
   let execute_vm tx callback_fn =
-    let int32_to_hex_str value =
-      Printf.sprintf "0x%lx" value
+    let int_to_hex_str i =
+      Printf.sprintf "0x%X" i
     in
 
     let open Transaction in
@@ -70,10 +70,10 @@ module VM = struct
       tx.hash
       tx.sender
       tx.receiver
-      (int32_to_hex_str (Int32.of_int tx.amount))
-      (int32_to_hex_str (Int32.of_int tx.gas_limit))
-      (int32_to_hex_str (Int32.of_int tx.gas_price))
-      (int32_to_hex_str (Int32.of_int tx.nonce))
+      (int_to_hex_str (tx.amount))
+      (int_to_hex_str (tx.gas_limit))
+      (int_to_hex_str (tx.gas_price))
+      (int_to_hex_str (tx.nonce))
       tx.payload
       tx.signature
     in
