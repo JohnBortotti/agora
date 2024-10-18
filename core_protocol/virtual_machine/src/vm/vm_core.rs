@@ -444,21 +444,21 @@ impl VM {
           Err("[VM] JUMPIF failed: insufficient operands on stack".to_string())
         }
       }
-      Instruction::Halt => {
+      Instruction::Halt { message } => {
         println!("[VM] HALT");
-        // TODO: halt
-        Ok(())
+        // TODO: halt; return error msg
+        Err(message.to_string())
       }
       
       // call/message operations
-      Instruction::Call { address, gas_limit, value } => {
-        println!("[VM] CALL {} {} {}", address, gas_limit, value);
+      Instruction::Call { address, gas_limit, amount, payload } => {
+        println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
         self.pc += 1;
         Ok(())
       }
       Instruction::Transaction { sender, receiver, amount } => {
         println!("[VM] TRANSACTION {} {} {}", sender, receiver, amount);
-        self.make_transaction(sender, *amount)?;
+        self.make_transaction(*receiver, *amount)?;
         self.pc += 1;
         Ok(())
       }
@@ -481,7 +481,7 @@ impl VM {
       }
       Instruction::Return => {
         println!("[VM] RETURN");
-        // TODO: halt
+        // TODO: return/finish the execution
         Ok(())
       }
 
@@ -523,7 +523,7 @@ impl VM {
 
   // returns a internal transaction, if the VM returns an error to peer 
   // we can discard the transaction, otherwise the node executes it
-  fn make_transaction(&self, receiver: &str, amount: U256) -> Result<InternalTransaction, String> {
+  fn make_transaction(&self, receiver: U256, amount: U256) -> Result<InternalTransaction, String> {
     let sender = self.transaction.receiver.clone();
 
     let req = jsonrpc::serialize_request(
@@ -878,10 +878,11 @@ mod tests {
   #[test]
   fn test_instruction_halt() {
     let mut vm = mock_vm();
-    let instruction = Instruction::Halt;
-    vm.execute_instruction(&instruction).unwrap();
-    assert_eq!(vm.pc, 0);
+    let instruction = Instruction::Halt { message: "custom_error_message".to_string() };
+    let result = vm.execute_instruction(&instruction);
+    assert_eq!(result, Err("custom_error_message".to_string()));
   }
+
 
   #[test]
   fn test_instruction_emit() {
