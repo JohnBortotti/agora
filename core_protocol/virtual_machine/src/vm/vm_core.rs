@@ -20,7 +20,7 @@ pub struct OverlayedChangeSet {
   pub internal_transactions: Vec<InternalTransaction>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct InternalTransaction {
   pub sender: String,
   pub receiver: String,
@@ -62,7 +62,7 @@ pub struct VM {
 // - [ ] pointers to handle string data
 //  - [ ] handle strings
 //  - [ ] handle dictionaries
-// - [ ] emit events
+// - [x] emit events
 //
 //
 // examples:
@@ -131,8 +131,8 @@ impl VM {
       message: result.1,
       vm_id: self.id,
       parent_vm: None,
-      events: vec!(),
-      internal_transactions: vec!(),
+      events: self.events.clone(),
+      internal_transactions: self.internal_transactions.clone()
     };
 
     vec![change_set]
@@ -446,7 +446,6 @@ impl VM {
       }
       Instruction::Halt { message } => {
         println!("[VM] HALT");
-        // TODO: halt; return error msg
         Err(message.to_string())
       }
       
@@ -481,7 +480,6 @@ impl VM {
       }
       Instruction::Return => {
         println!("[VM] RETURN");
-        // TODO: return/finish the execution
         Ok(())
       }
 
