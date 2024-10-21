@@ -53,7 +53,6 @@ pub struct VM {
   ocaml_callback: Box<dyn OcamlCallback>,
 }
 
-
 // TODO: 
 // - [ ] nested contract calls
 //  - [ ] create the transaction
@@ -63,6 +62,7 @@ pub struct VM {
 //  - [ ] handle strings
 //  - [ ] handle dictionaries
 // - [x] emit events
+// - [x] internal transactions
 //
 //
 // examples:
@@ -457,7 +457,8 @@ impl VM {
       }
       Instruction::Transaction { sender, receiver, amount } => {
         println!("[VM] TRANSACTION {} {} {}", sender, receiver, amount);
-        self.make_transaction(*receiver, *amount)?;
+        let tx = self.make_transaction(*receiver, *amount)?;
+        self.internal_transactions.push(tx);
         self.pc += 1;
         Ok(())
       }
