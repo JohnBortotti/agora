@@ -49,10 +49,11 @@ module Account = struct
     | Some (Branch (_, Some acc_data)) -> Some ((decode (RLP.decode acc_data)))
     | _ -> None
 
-  (* TODO: fix the case we sender or receiver is the same address as miner_addr *)
+  (* TODO: fix the case when sender or receiver is the same address as miner_addr *)
   let apply_transaction miner_addr global_state_trie storage_trie receipt_trie tx vm_fun: 
     (MKPTrie.t * MKPTrie.t * MKPTrie.t) =
     let open Digestif.SHA256 in
+    let open Yojson.Basic.Util in 
 
     let total_cost = tx.amount + (tx.gas_limit * tx.gas_price) in
 
@@ -63,7 +64,7 @@ module Account = struct
         status = false;
         message = "Sender account not found";
         gas_used = 0;
-        logs = [];
+        events = [];
         bloom_filter = "";
         contract_address = None;
       } in
@@ -121,7 +122,7 @@ module Account = struct
                 status = false;
                 message = "Contract address already in use";
                 gas_used = 0;
-                logs = [];
+                events = [];
                 bloom_filter = "";
                 contract_address = None;
               } in
@@ -136,25 +137,25 @@ module Account = struct
                 code_hash = code_hash;
               } in
 
-              (* storing the contract account on global_state: <contract_address, ...>*)
+              (* storing the contract account on global_state: <contract_address, ...> *)
               let state_trie_with_contract = 
                 MKPTrie.insert state_trie_after_fees contract_address (encode contract_account)
               in
 
-              (* storing the actual contract code on contract_state: <code_hash, full_code>*)
+              (* storing the actual contract code on contract_state: <code_hash, full_code> *)
               let contract_code_state =
                 MKPTrie.insert storage_trie code_hash (`String tx.payload)
               in
 
               Printf.printf "contract created: %s\n" contract_address;
 
-              (* storing the receipt on receipt_state*)
+              (* storing the receipt on receipt_state *)
               let receipt = {
                 transaction_hash = tx.hash;
                 status = true;
                 message = "Contract created";
                 gas_used = 0;
-                logs = [];
+                events = [];
                 bloom_filter = "";
                 contract_address = Some contract_address;
               } in
@@ -184,21 +185,44 @@ module Account = struct
           if receiver_account.code_hash <> "" then begin
             let vm_res = vm_fun tx in
             Printf.printf "[Ocaml tx_apply] VM finished execution: \n %s \n\n" vm_res;
-            (* TODO: add VM logs on receipt *)
 
-            let mocked_receipt_ok = {
+            (* TODO: 
+              - decode vm_res to json
+              - handle VM return data on receipt 
+                - [x] gas used on receipt
+                - [x] events 
+                - [x] refund remaining gas
+                - [ ] make internal_transactions
+                - [ ] bloom filter
+            *)
+
+            (* generating receipt and emmited events *)
+            let vm_res_json = Yojson.Basic.from_string vm_res in
+            let receipt = {
               transaction_hash = tx.hash;
-              status = true;
-              message = "Contract executed";
-              gas_used = 0;
-              logs = [];
+              status = (vm_res_json |> member "status" |> to_bool);
+              message = (vm_res_json |> member "message" |> to_string);
+              gas_used = (vm_res_json |> member "gas_used" |> to_string |> int_of_string);
+              events = (vm_res_json |> member "events" |> to_list |> List.map event_of_json);
               bloom_filter = "";
-              contract_address = Some receiver_account.address;
+              contract_address = None;
             } in
-            let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash 
-              (encode_receipt mocked_receipt_ok) 
+
+            (* refunding unused gas *)
+            let gas_remaining = vm_res_json |> member "gas_remaining" |> to_string |> int_of_string in
+            let refunded_sender_account = {
+              sender_account with 
+              balance = (sender_account.balance - total_cost) + (gas_remaining * tx.gas_price)
+            } in
+
+            let state_trie_after_refund_gas = MKPTrie.insert state_trie_after_pay_receiver
+              tx.sender (encode refunded_sender_account) 
             in
-            (state_trie_after_pay_receiver, storage_trie, updated_receipt_trie)
+
+            let updated_receipt_trie = MKPTrie.insert receipt_trie tx.hash 
+              (encode_receipt receipt) 
+            in
+            (state_trie_after_refund_gas, storage_trie, updated_receipt_trie)
           end
           (* normal transaction *)
           else 
@@ -207,7 +231,7 @@ module Account = struct
               status = true;
               message = "Normal transaction";
               gas_used = 0;
-              logs = [];
+              events = [];
               bloom_filter = "";
               contract_address = None;
             } in
@@ -231,7 +255,7 @@ module Account = struct
       status = true;
       message = "Coinbase transaction";
       gas_used = 0;
-      logs = [];
+      events = [];
       bloom_filter = "";
       contract_address = None;
     } in

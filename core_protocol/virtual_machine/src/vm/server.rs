@@ -31,7 +31,7 @@ impl VMServer {
 
     println!("\n[VM] spawning VM with ID: {}\n", vm_id);
 
-    let result = vm.run();
+    let result = &vm.run();
 
     match serde_json::to_string(&result) {
       Ok(json) => json,

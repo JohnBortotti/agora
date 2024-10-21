@@ -83,7 +83,7 @@ pub fn get_instruction_gas_cost(instruction: &Instruction) -> u32 {
         // call/Message Operations
         Instruction::Call { .. } => 10,
         Instruction::Transaction { .. } => 12,
-        Instruction::Emit { .. } => 10,
+        Instruction::Emit { .. } => 12,
         Instruction::Return => 5,
 
         // environment Operations

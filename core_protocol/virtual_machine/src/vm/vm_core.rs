@@ -18,6 +18,9 @@ pub struct OverlayedChangeSet {
   pub parent_vm: Option<Uuid>,
   pub events: Vec<Event>,
   pub internal_transactions: Vec<InternalTransaction>,
+  pub gas_limit: U256,
+  pub gas_used: U256,
+  pub gas_remaining: U256,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -74,14 +77,13 @@ pub struct VM {
 // 03                                                                // sum
 //
 // 70                                                                // emit
-// 08                                                                // event_name length (8 bytes)
-// 5472616e73666572                                                  // UTF-8 encoded "Transfer"
+// 00 08                                                             // event_name length
+// 54 72 61 6e 73 66 65 72                                           // UTF-8 encoded "Transfer"
 // 0100000000000000000000000000000000000000000000000000000000000000  // Topic 1
 // 0200000000000000000000000000000000000000000000000000000000000000  // Topic 2
 // 0300000000000000000000000000000000000000000000000000000000000000  // Topic 3
-// 0000000000000000000000000000000000000000000000000000000000000020  // data lenght (32 bytes)
-// 000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F  // Event Data
-// 
+// 00 02                                                             // data lenght (32 bytes)
+// aa aa                                                             // Event Data
 
 impl VM {
   pub fn new(id: Uuid, rx: Receiver<String>, transaction: Transaction, ocaml_callback: Box<dyn OcamlCallback>) -> Self {
@@ -99,7 +101,7 @@ impl VM {
     }
   }
 
-  pub fn run(&mut self) -> Vec<OverlayedChangeSet> {
+  pub fn run(&mut self) -> OverlayedChangeSet {
     let result = {
       println!("[VM] running: {} ; gas_limit: {}\n", self.id, self.transaction.gas_limit);
 
@@ -121,8 +123,8 @@ impl VM {
       }
 
       match self.execute_program(instructions.as_ref().unwrap(), self.transaction.gas_limit) {
-        Ok(_) => (true, "Success".to_string()),
-        Err(err) => (false, err),
+        Ok(gas_remaining) => (true, "Success".to_string(), gas_remaining),
+        Err((err, gas_remaining)) => (false, err, gas_remaining),
       }
     };
 
@@ -132,10 +134,13 @@ impl VM {
       vm_id: self.id,
       parent_vm: None,
       events: self.events.clone(),
-      internal_transactions: self.internal_transactions.clone()
+      internal_transactions: self.internal_transactions.clone(),
+      gas_limit: self.transaction.gas_limit,
+      gas_remaining: result.2,
+      gas_used: self.transaction.gas_limit - result.2
     };
 
-    vec![change_set]
+    change_set
   }
 
   pub fn parse_program_to_bytecode(program: &str) -> Result<Vec<u8>, String> {
@@ -161,7 +166,7 @@ impl VM {
     Ok(bytecode)
   }
 
-  fn execute_program(&mut self, program: &[Instruction], gas_limit: U256) -> Result<(), String> {
+  fn execute_program(&mut self, program: &[Instruction], gas_limit: U256) -> Result<U256, (String, U256)> {
     let mut gas_limit = gas_limit;
 
     while self.pc < program.len() {
@@ -169,13 +174,16 @@ impl VM {
       let gas_cost = instruction::get_instruction_gas_cost(opcode);
 
       if gas_limit < U256::from(gas_cost) {
-        return Err("Out of gas".to_string());
+        return Err(("Out of gas".to_string(), gas_limit));
       }
 
       gas_limit = gas_limit - U256::from(gas_cost);
-      self.execute_instruction(opcode)?;
+      match self.execute_instruction(opcode) {
+        Ok(_) => (),
+        Err(err) => return Err((err, gas_limit)),
+      }
     }
-    Ok(())
+    Ok(gas_limit)
   }
 
   fn execute_instruction(&mut self, instruction: &Instruction) -> Result<(), String> {
@@ -472,6 +480,7 @@ impl VM {
                  event_name, topic1, topic2, topic3, data);
 
         self.events.push(Event {
+          name: event_name.clone(),
           address: self.transaction.receiver.clone(),
           topics: vec![*topic1, *topic2, *topic3],
           data: data.clone(),
@@ -895,6 +904,7 @@ mod tests {
     };
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.events, vec![Event {
+      name: "event".to_string(),
       address: vm.transaction.receiver.clone(),
       topics: vec![
         U256::from(1 as u32),

@@ -15,9 +15,10 @@ type t = {
 }
 
 type event = {
+  name: string;
   address: string;
   topics: string list;
-  data: string;
+  data: int list;
 }
 
 type receipt = {
@@ -25,7 +26,7 @@ type receipt = {
   status: bool;
   message: string;
   gas_used: int;
-  logs: event list;
+  events: event list;
   bloom_filter: string;
   contract_address: string option;
 }
@@ -175,19 +176,44 @@ let transaction_of_json json: t =
     signature = json |> member "signature" |> to_string;
   }
 
-  let encode_event log =
+  let encode_event event =
     `List [
-      `String log.address;
-      `List (List.map (fun topic -> `String topic) log.topics);
-      `String log.data
+      `String event.name;
+      `String event.address;
+      `List (List.map (fun topic -> `String topic) event.topics);
+      `List (List.map (fun data -> `String (string_of_int data)) event.data);
     ]
+
+  let event_of_json json =
+    let open Yojson.Basic.Util in
+    {
+      name = json |> member "name" |> to_string;
+      address = json |> member "address" |> to_string;
+      topics = json |> member "topics" |> to_list |> List.map to_string;
+      data = json |> member "data" |> to_list |> List.map to_int;
+    }
 
   let encode_receipt receipt =
     `List [
       `String receipt.transaction_hash;
       `String (string_of_bool receipt.status);
       `String (string_of_int receipt.gas_used);
-      `List (List.map encode_event receipt.logs);
+      `List (List.map encode_event receipt.events);
       `String receipt.bloom_filter;
       `String (match receipt.contract_address with None -> "" | Some addr -> addr)
     ]
+
+  let string_of_event event =
+    "name: " ^ event.name ^ "\n" ^
+    "address: " ^ event.address ^ "\n" ^
+    "topics: " ^ (String.concat ", " event.topics) ^ "\n" ^
+    "data: " ^ (String.concat ", " (List.map string_of_int event.data))
+
+  let string_of_receipt receipt =
+    "transaction hash: " ^ receipt.transaction_hash ^ "\n" ^
+    "status: " ^ string_of_bool receipt.status ^ "\n" ^
+    "message: " ^ receipt.message ^ "\n" ^
+    "gas used: " ^ string_of_int receipt.gas_used ^ "\n" ^
+    "events: [\n" ^ (String.concat "\n" (List.map string_of_event receipt.events)) ^ "\n]\n" ^
+    "bloom filter: " ^ receipt.bloom_filter ^ "\n" ^
+    "contract address: " ^ (match receipt.contract_address with None -> "" | Some addr -> addr)
