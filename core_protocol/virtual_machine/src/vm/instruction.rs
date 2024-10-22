@@ -42,7 +42,7 @@ pub enum Instruction {
   // call/message operations
   // TODO: unit tests
   Call { address: U256, gas_limit: U256, amount: U256, payload: String },
-  Transaction { sender: U256, receiver: U256, amount: U256 },
+  Transaction { receiver: U256, amount: U256 },
   Emit { event_name: String, topic1: U256, topic2: U256, topic3: U256, data: Vec<u8> },
   Return,
 
@@ -354,13 +354,12 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
           return Err("Transaction instruction expects sender, receiver, and amount".to_string());
         }
 
-        let sender = U256::from_be_bytes(bytecode[i + 1..i + 33].try_into().unwrap());
-        let receiver = U256::from_be_bytes(bytecode[i + 33..i + 65].try_into().unwrap());
-        let amount = U256::from_be_bytes(bytecode[i + 65..i + 97].try_into().unwrap());
+        let receiver = U256::from_be_bytes(bytecode[i + 1..i + 33].try_into().unwrap());
+        let amount = U256::from_be_bytes(bytecode[i + 33..i + 65].try_into().unwrap());
 
-        instructions.push(Instruction::Transaction { sender, receiver, amount });
+        instructions.push(Instruction::Transaction { receiver, amount });
 
-        i += 97;
+        i += 65;
       }
       0x52 => {
         instructions.push(Instruction::Return);
@@ -654,16 +653,12 @@ mod tests {
   fn test_decode_transaction_instruction() {
     let program = VM::parse_program_to_bytecode("
       51
-      4d8bbd4e450f1f604139b50fd0fdbebe662e7e17350fd2b31359d7b49c388a50
       5d8bbd4e450f1f604139b50fd0fdbabc662e7e17350fd2b31359d7b49c388a21
       0000000000000000000000000000000000000000000000000000000000000002
       ").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
       vec![Instruction::Transaction {
-        sender: U256::from_str_hex(
-          "0x4d8bbd4e450f1f604139b50fd0fdbebe662e7e17350fd2b31359d7b49c388a50"
-        ).unwrap(),
         receiver: U256::from_str_hex(
           "0x5d8bbd4e450f1f604139b50fd0fdbabc662e7e17350fd2b31359d7b49c388a21"
         ).unwrap(),

@@ -192,7 +192,7 @@ module Account = struct
                 - [x] gas used on receipt
                 - [x] events 
                 - [x] refund remaining gas
-                - [ ] make internal_transactions
+                - [x] make internal_transactions
                 - [ ] bloom filter
             *)
 
@@ -208,6 +208,45 @@ module Account = struct
               contract_address = None;
             } in
 
+            (* execute internal_transactions *)
+            let state_trie_after_internal_transactions =
+              List.fold_left (fun state tx_internal ->
+                let amount = tx_internal |> member "amount" |> to_string |> int_of_string in
+                let tx_receiver_addr = tx_internal |> member "receiver" |> to_string in
+
+                (* get contract account *)
+                (match get_account state tx.receiver with
+                | None -> failwith "Contract account not found"
+                | Some contract_acc -> 
+
+                  if contract_acc.balance <= 0 then
+                    failwith "Insufficient transaction balance";
+
+                  let updated_receiver_acc =
+                    (match get_account global_state_trie tx_receiver_addr with
+                    | None -> {
+                        address = tx_receiver_addr;
+                        balance = amount;
+                        nonce = 0;
+                        storage_root = "";
+                        code_hash = "";
+                      }
+                    | Some acc -> { acc with balance = (acc.balance + amount) } ) in
+
+                  let updated_contract_account = {
+                    contract_acc with 
+                    balance = contract_acc.balance - amount
+                  } in 
+
+                  (* updating contract and receiver amount *)
+                  MKPTrie.insert state contract_acc.address (encode updated_contract_account)
+                  |> fun f -> MKPTrie.insert f tx_receiver_addr (encode updated_receiver_acc)
+                )
+              ) 
+              state_trie_after_pay_receiver  
+              (vm_res_json |> member "internal_transactions" |> to_list)
+            in
+
             (* refunding unused gas *)
             let gas_remaining = vm_res_json |> member "gas_remaining" |> to_string |> int_of_string in
             let refunded_sender_account = {
@@ -215,7 +254,7 @@ module Account = struct
               balance = (sender_account.balance - total_cost) + (gas_remaining * tx.gas_price)
             } in
 
-            let state_trie_after_refund_gas = MKPTrie.insert state_trie_after_pay_receiver
+            let state_trie_after_refund_gas = MKPTrie.insert state_trie_after_internal_transactions
               tx.sender (encode refunded_sender_account) 
             in
 

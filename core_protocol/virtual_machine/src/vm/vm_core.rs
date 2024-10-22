@@ -84,6 +84,10 @@ pub struct VM {
 // 0300000000000000000000000000000000000000000000000000000000000000  // Topic 3
 // 00 02                                                             // data lenght (32 bytes)
 // aa aa                                                             // Event Data
+//
+// 51                                                                // transaction
+// 0000000000000000000000000000000000000000000000000000000000000001  // receiver
+// 0000000000000000000000000000000000000000000000000000000000000005  // amount
 
 impl VM {
   pub fn new(id: Uuid, rx: Receiver<String>, transaction: Transaction, ocaml_callback: Box<dyn OcamlCallback>) -> Self {
@@ -463,8 +467,8 @@ impl VM {
         self.pc += 1;
         Ok(())
       }
-      Instruction::Transaction { sender, receiver, amount } => {
-        println!("[VM] TRANSACTION {} {} {}", sender, receiver, amount);
+      Instruction::Transaction { receiver, amount } => {
+        println!("[VM] INTERNAL_TRANSACTION:\nto: {}\namount: {}", receiver, amount);
         let tx = self.make_transaction(*receiver, *amount)?;
         self.internal_transactions.push(tx);
         self.pc += 1;
@@ -532,22 +536,21 @@ impl VM {
   // returns a internal transaction, if the VM returns an error to peer 
   // we can discard the transaction, otherwise the node executes it
   fn make_transaction(&self, receiver: U256, amount: U256) -> Result<InternalTransaction, String> {
-    let sender = self.transaction.receiver.clone();
 
     let req = jsonrpc::serialize_request(
       "get_account",
-      json!([sender])
+      json!([self.transaction.receiver.clone()])
       );
 
     let res = self.json_rpc(req).unwrap();
-    let balance = res.result.unwrap()["balance"].take();
-    let balance_u256 = U256::from_str_radix(balance.as_str().unwrap(), 10).unwrap();
+    let balance = res.result.unwrap()["balance"].take().as_i64().unwrap();
+    let balance_u256 = U256::from(balance as u64);
 
     if balance_u256 < amount {
-      return Err("Insufficient balance".to_string())
+      return Err("Insufficient balance for internal_transaction".to_string())
     } else {
       Ok(InternalTransaction {
-        sender,
+        sender: self.transaction.receiver.clone(),
         receiver: receiver.to_string(),
         amount
       })
