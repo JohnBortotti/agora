@@ -1,10 +1,10 @@
 (*
 TODO:
   - [ ] JsonRPC (batch requests) ???
-  - [ ] VM
-    - [ ] events
-    - [ ] return state changes
   - [ ] agora lang compiler
+  - [ ] logs
+    - [ ] node
+    - [ ] VM
  *)
 
 open Agora_core.Node

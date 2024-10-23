@@ -1,5 +1,4 @@
 use ethnum::U256;
-use super::vm_core::VM;
 
 #[derive(Debug, PartialEq)]
 pub enum Instruction {
@@ -21,6 +20,8 @@ pub enum Instruction {
   Gt,
   Le,
   Ge,
+  And,
+  Or,
 
   // bitwise Operations
   BAnd,
@@ -60,39 +61,40 @@ pub fn get_instruction_gas_cost(instruction: &Instruction) -> u32 {
   match instruction {
     // arithmetic Operations
     Instruction::Add | Instruction::Sub | Instruction::Mul 
-      | Instruction::Div | Instruction::Mod => 3,
+    | Instruction::Div | Instruction::Mod => 3,
 
-      // stack Operations
-      Instruction::Push { .. } | Instruction::Pop => 2,
+    // stack Operations
+    Instruction::Push { .. } | Instruction::Pop => 2,
 
-      // comparison Operations
-      Instruction::Eq | Instruction::Ne | Instruction::Lt 
-        | Instruction::Gt | Instruction::Le | Instruction::Ge => 4,
+    // comparison Operations
+    Instruction::Eq | Instruction::Ne | Instruction::Lt 
+    | Instruction::Gt | Instruction::Le | Instruction::Ge
+    | Instruction::And | Instruction::Or => 4,
 
-        // bitwise Operations
-        Instruction::BAnd | Instruction::BOr | Instruction::BXor | Instruction::BNot => 3,
-        Instruction::Shl { .. } | Instruction::Shr { .. } => 4,
+    // bitwise Operations
+    Instruction::BAnd | Instruction::BOr | Instruction::BXor | Instruction::BNot => 3,
+    Instruction::Shl { .. } | Instruction::Shr { .. } => 4,
 
-        // storage Operations
-        Instruction::Set { .. } | Instruction::Get { .. } => 5,
+    // storage Operations
+    Instruction::Set { .. } | Instruction::Get { .. } => 5,
 
-        // control Flow Operations
-        Instruction::Jump { .. } | Instruction::JumpIf { .. } => 8,
-        Instruction::Halt { .. } => 2,
+    // control Flow Operations
+    Instruction::Jump { .. } | Instruction::JumpIf { .. } => 8,
+    Instruction::Halt { .. } => 2,
 
-        // call/Message Operations
-        Instruction::Call { .. } => 10,
-        Instruction::Transaction { .. } => 12,
-        Instruction::Emit { .. } => 12,
-        Instruction::Return => 5,
+    // call/Message Operations
+    Instruction::Call { .. } => 10,
+    Instruction::Transaction { .. } => 12,
+    Instruction::Emit { .. } => 12,
+    Instruction::Return => 5,
 
-        // environment Operations
-        Instruction::GetBalance { .. } => 6,
-        Instruction::GetCaller => 4,
-        Instruction::GetCallValue => 4,
-        Instruction::GetGasPrice => 4,
-        Instruction::GetBlockNumber => 4,
-        Instruction::GetBlockTimestamp => 4,
+    // environment Operations
+    Instruction::GetBalance { .. } => 6,
+    Instruction::GetCaller => 4,
+    Instruction::GetCallValue => 4,
+    Instruction::GetGasPrice => 4,
+    Instruction::GetBlockNumber => 4,
+    Instruction::GetBlockTimestamp => 4,
   }
 }
 
@@ -163,6 +165,14 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
       }
       0x15 => {
         instructions.push(Instruction::Ge);
+        i += 1;
+      }
+      0x16 => {
+        instructions.push(Instruction::And);
+        i += 1;
+      }
+      0x17 => {
+        instructions.push(Instruction::Or);
         i += 1;
       }
 
@@ -272,15 +282,15 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
           return Err("Call instruction expects address (32 bytes), gas limit (32 bytes), amount (32 bytes), and payload length (2 bytes)".to_string());
         }
 
-        // Decode the 32-byte address.
+        // decode the 32-byte address.
         let address = U256::from_be_bytes(bytecode[i + 1..i + 33].try_into()
           .map_err(|_| "Invalid address".to_string())?);
 
-        // Decode the 32-byte gas limit.
+        // decode the 32-byte gas limit.
         let gas_limit = U256::from_be_bytes(bytecode[i + 33..i + 65].try_into()
           .map_err(|_| "Invalid gas limit".to_string())?);
 
-        // Decode the 32-byte amount.
+        // decode the 32-byte amount.
         let amount = U256::from_be_bytes(bytecode[i + 65..i + 97].try_into()
           .map_err(|_| "Invalid amount".to_string())?);
 
@@ -407,6 +417,7 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
 
 mod tests {
   use super::*;
+  use super::super::vm_core::VM;
 
   #[test]
   fn test_decode_push_instruction() {
@@ -527,6 +538,25 @@ mod tests {
       vec![Instruction::Ge]
       );
   }
+
+  #[test]
+  fn test_decode_and_instruction() {
+    let program = VM::parse_program_to_bytecode("16").unwrap();
+    assert_eq!(
+      decode_bytecode_to_instruction(&program).unwrap(),
+      vec![Instruction::And]
+      );
+  }
+
+  #[test]
+  fn test_decode_or_instruction() {
+    let program = VM::parse_program_to_bytecode("17").unwrap();
+    assert_eq!(
+      decode_bytecode_to_instruction(&program).unwrap(),
+      vec![Instruction::Or]
+      );
+  }
+  
 
   #[test]
   fn test_decode_band_instruction() {

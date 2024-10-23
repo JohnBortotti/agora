@@ -102,7 +102,6 @@ module Account = struct
       (* contract creation *)
       if tx.receiver = "0" then 
         begin
-          (* TODO: fix contract_address generation *)
           (* TODO: 
             - run vm and execute the contract_init()
             - the resulting opcode is stored at contract_state db (code_hash, program)

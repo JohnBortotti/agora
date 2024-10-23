@@ -53,6 +53,7 @@ pub struct VM {
   pub pc: usize,
   pub events: Vec<Event>,
   pub internal_transactions: Vec<InternalTransaction>,
+  pub gas_remaining: U256,
   ocaml_callback: Box<dyn OcamlCallback>,
 }
 
@@ -70,12 +71,14 @@ pub struct VM {
 //
 // examples:
 //
+// // SUM 
 // 01                                                                // push
 // 000000000000000000000000000000000000000000000000000000000000000a  // 
 // 01                                                                // push
 // 0000000000000000000000000000000000000000000000000000000000000014  // push
 // 03                                                                // sum
 //
+// // EMIT EVENT
 // 70                                                                // emit
 // 00 08                                                             // event_name length
 // 54 72 61 6e 73 66 65 72                                           // UTF-8 encoded "Transfer"
@@ -85,22 +88,31 @@ pub struct VM {
 // 00 02                                                             // data lenght (32 bytes)
 // aa aa                                                             // Event Data
 //
+// // TRANSACTION
 // 51                                                                // transaction
 // 0000000000000000000000000000000000000000000000000000000000000001  // receiver
 // 0000000000000000000000000000000000000000000000000000000000000005  // amount
+//
+// // CALL CONTRACT
+// 50
+// 0000000000000000000000000000000000000000000000000000000000000001  // contract address
+// 0000000000000000000000000000000000000000000000000000000000000001  // gas limit
+// 0000000000000000000000000000000000000000000000000000000000000000  // amount
+// 00 00                                                             // payload lenght (32 bytes)
 
 impl VM {
   pub fn new(id: Uuid, rx: Receiver<String>, transaction: Transaction, ocaml_callback: Box<dyn OcamlCallback>) -> Self {
     VM {
       id,
       rx,
-      transaction,
+      transaction: transaction.clone(),
       storage: HashMap::new(),
       stack: vec!(),
       memory: vec!(),
       pc: 0,
       events: vec!(),
       internal_transactions: vec!(),
+      gas_remaining: transaction.gas_limit,
       ocaml_callback,
     }
   }
@@ -126,9 +138,9 @@ impl VM {
         (false, format!("Failed to decode bytecode: {}\n", err));
       }
 
-      match self.execute_program(instructions.as_ref().unwrap(), self.transaction.gas_limit) {
-        Ok(gas_remaining) => (true, "Success".to_string(), gas_remaining),
-        Err((err, gas_remaining)) => (false, err, gas_remaining),
+      match self.execute_program(instructions.as_ref().unwrap()) {
+        Ok(()) => (true, "Success".to_string()),
+        Err(err) => (false, err),
       }
     };
 
@@ -140,8 +152,8 @@ impl VM {
       events: self.events.clone(),
       internal_transactions: self.internal_transactions.clone(),
       gas_limit: self.transaction.gas_limit,
-      gas_remaining: result.2,
-      gas_used: self.transaction.gas_limit - result.2
+      gas_remaining: self.gas_remaining,
+      gas_used: self.transaction.gas_limit - self.gas_remaining,
     };
 
     change_set
@@ -170,24 +182,22 @@ impl VM {
     Ok(bytecode)
   }
 
-  fn execute_program(&mut self, program: &[Instruction], gas_limit: U256) -> Result<U256, (String, U256)> {
-    let mut gas_limit = gas_limit;
-
+  fn execute_program(&mut self, program: &[Instruction]) -> Result<(), String> {
     while self.pc < program.len() {
       let opcode = &program[self.pc];
       let gas_cost = instruction::get_instruction_gas_cost(opcode);
 
-      if gas_limit < U256::from(gas_cost) {
-        return Err(("Out of gas".to_string(), gas_limit));
+      if self.gas_remaining < U256::from(gas_cost) {
+        return Err("Out of gas".to_string());
       }
 
-      gas_limit = gas_limit - U256::from(gas_cost);
+      self.gas_remaining = self.gas_remaining - U256::from(gas_cost);
       match self.execute_instruction(opcode) {
         Ok(_) => (),
-        Err(err) => return Err((err, gas_limit)),
+        Err(err) => return Err(err),
       }
     }
-    Ok(gas_limit)
+    Ok(())
   }
 
   fn execute_instruction(&mut self, instruction: &Instruction) -> Result<(), String> {
@@ -279,7 +289,6 @@ impl VM {
       }
 
       // logical/comparison operations
-      // TODO: AND, OR, NOT, XOR
       Instruction::Eq => {
         if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
           let result = if a == b { 1 as u64 } else { 0 as u64 };
@@ -344,6 +353,28 @@ impl VM {
           Ok(())
         } else {
           Err("[VM] GE failed: insufficient operands on stack".to_string())
+        }
+      }
+      Instruction::And => {
+        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+          let result = a & b;
+          self.stack.push(result);
+          println!("[VM] AND {} & {} = {}", b, a, result);
+          self.pc += 1;
+          Ok(())
+        } else {
+          Err("[VM] AND failed: insufficient operands on stack".to_string())
+        }
+      }
+      Instruction::Or => {
+        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+          let result = a | b;
+          self.stack.push(result);
+          println!("[VM] OR {} | {} = {}", b, a, result);
+          self.pc += 1;
+          Ok(())
+        } else {
+          Err("[VM] OR failed: insufficient operands on stack".to_string())
         }
       }
 
@@ -463,6 +494,13 @@ impl VM {
       
       // call/message operations
       Instruction::Call { address, gas_limit, amount, payload } => {
+        let mut call_changeset = 
+          self.execute_contract(address.to_string(), *gas_limit, *amount, payload.clone())?;
+
+        self.internal_transactions.append(&mut call_changeset.internal_transactions);
+        self.events.append(&mut call_changeset.events);
+        self.gas_remaining -= call_changeset.gas_used;
+
         println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
         self.pc += 1;
         Ok(())
@@ -536,7 +574,6 @@ impl VM {
   // returns a internal transaction, if the VM returns an error to peer 
   // we can discard the transaction, otherwise the node executes it
   fn make_transaction(&self, receiver: U256, amount: U256) -> Result<InternalTransaction, String> {
-
     let req = jsonrpc::serialize_request(
       "get_account",
       json!([self.transaction.receiver.clone()])
@@ -557,6 +594,37 @@ impl VM {
     }
   }
 
+  fn execute_contract(&self, address: String, gas_limit: U256, amount: U256, payload: String) ->
+    Result<OverlayedChangeSet, String> {
+      if gas_limit > self.gas_remaining {
+        return Err("Insufficient gas for contract call".to_string())
+      }
+
+      // let transaction = Transaction {
+      //   hash: "hash".to_string(),
+      //   sender: self.transaction.receiver.clone(),
+      //   receiver: address.clone(),
+      //   amount,
+      //   gas_limit,
+      //   gas_price: self.transaction.gas_price,
+      //   nonce: U256::from(0 as u64),
+      //   payload,
+      //   signature: "signature".to_string(),
+      // };
+
+      Ok(OverlayedChangeSet{
+        status: true,
+        message: "Success".to_string(),
+        vm_id: Uuid::new_v4(),
+        parent_vm: Some(self.id),
+        events: vec!(),
+        internal_transactions: vec!(),
+        gas_limit,
+        gas_used: U256::from(0 as u64),
+        gas_remaining: gas_limit,
+      })
+  }
+
   fn fetch_contract_code(&self, contract_address: String) -> Result<String, String> {
     let req = jsonrpc::serialize_request(
       "get_code",
@@ -573,7 +641,7 @@ impl VM {
 
     self.ocaml_callback.call(&self.id.to_string(), &json);
 
-    match self.rx.recv_timeout(std::time::Duration::from_secs(20)) {
+    match self.rx.recv_timeout(std::time::Duration::from_secs(40)) {
       Ok(message) => {
         println!("[VM] Received message: {}", message);
         return match jsonrpc::deserialize_response(&message) {
