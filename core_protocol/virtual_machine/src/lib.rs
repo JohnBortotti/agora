@@ -1,21 +1,21 @@
 mod jsonrpc;
 mod vm;
 
-use vm::server::VMServer;
+use vm::server::Server;
 use ethnum::U256;
 use vm::vm_core::Transaction;
 use std::ffi::{CStr, CString, c_char, c_void};
 use uuid::Uuid;
 
 #[no_mangle]
-pub extern "C" fn ffi_create_vm_server() -> *mut VMServer {
-  let server = VMServer::new();
+pub extern "C" fn ffi_create_vm_server() -> *mut Server {
+  let server = Server::new();
   Box::into_raw(Box::new(server))
 }
 
 #[no_mangle]
 pub extern "C" fn ffi_spawn_vm(
-  server_ptr: *mut VMServer,
+  server_ptr: *mut Server,
   hash: *const c_char,
   sender: *const c_char,
   receiver: *const c_char,
@@ -28,7 +28,7 @@ pub extern "C" fn ffi_spawn_vm(
   ) -> *mut c_char {
   let server = unsafe {
     assert!(!server_ptr.is_null());
-    &*server_ptr
+    &mut *server_ptr
   };
 
   let hash = unsafe {
@@ -95,7 +95,7 @@ pub extern "C" fn ffi_spawn_vm(
     signature,
   };
 
-  let res = server.spawn_vm(transaction);
+  let res = server.run(transaction);
   let res_string = res.to_string();
 
   match CString::new(res_string) {
@@ -109,7 +109,7 @@ pub extern "C" fn ffi_spawn_vm(
 
 #[no_mangle]
 pub extern "C" fn ffi_send_data_to_vm(
-  server_ptr: *mut VMServer,
+  server_ptr: *mut Server,
   vm_id: *const c_char,
   data: *const c_char) {
   let server = unsafe {
@@ -146,7 +146,7 @@ pub extern "C" fn ffi_send_data_to_vm(
 pub extern "C" fn ffi_destroy_vm_server(server_ptr: *mut c_void) {
   if !server_ptr.is_null() {
     unsafe {
-      let server = Box::from_raw(server_ptr as *mut VMServer);
+      let server = Box::from_raw(server_ptr as *mut Server);
       drop(server);
     }
   }
