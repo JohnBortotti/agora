@@ -30,17 +30,17 @@ module VM = struct
     if result_str = "" then failwith "Failed to spawn VM";
     result_str
 
-  let send_data vm_server vm_id json_str =
+  let send_data vm_server request_id json_str =
     if is_null vm_server.server then failwith "VM server is not initialized";
-    ffi_send_data_to_vm vm_server.server vm_id json_str
+    ffi_send_data_to_vm vm_server.server request_id json_str
 
-  let request_data_callback f vm_server vm_id req_json =
+  let request_data_callback f vm_server request_id req_json =
     let open Lwt.Syntax in
 
     let* result = (f req_json) in
     let result_str = Yojson.Basic.to_string result in
 
-    send_data vm_server vm_id result_str;
+    send_data vm_server request_id result_str;
 
     Lwt.return_unit
 

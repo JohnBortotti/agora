@@ -1,6 +1,6 @@
 use ethnum::U256;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Instruction {
   // stack Operations
   Push { value: U256 },

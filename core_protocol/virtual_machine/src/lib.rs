@@ -110,22 +110,22 @@ pub extern "C" fn ffi_spawn_vm(
 #[no_mangle]
 pub extern "C" fn ffi_send_data_to_vm(
   server_ptr: *mut Server,
-  vm_id: *const c_char,
+  request_id: *const c_char,
   data: *const c_char) {
   let server = unsafe {
     if server_ptr.is_null() {
       eprintln!("Error: server_ptr is null");
       return;
     }
-    &*server_ptr
+    &mut*server_ptr
   };
 
-  let vm_id_str = unsafe {
-    if vm_id.is_null() {
-      eprintln!("Error: vm_id pointer is null");
+  let request_id_str = unsafe {
+    if request_id.is_null() {
+      eprintln!("Error: request_id pointer is null");
       return;
     }
-    CStr::from_ptr(vm_id).to_str().unwrap()
+    CStr::from_ptr(request_id).to_str().unwrap()
   };
 
   let data_str = unsafe {
@@ -136,8 +136,8 @@ pub extern "C" fn ffi_send_data_to_vm(
     CStr::from_ptr(data).to_str().unwrap()
   };
 
-  match Uuid::parse_str(vm_id_str) {
-    Ok(vm_id) => server.send_data_to_vm(vm_id, data_str.to_string()),
+  match Uuid::parse_str(request_id_str) {
+    Ok(request_id) => server.send_data_to_vm(request_id, data_str.to_string()),
     Err(_) => eprintln!("Error: Invalid UUID format for vm_id"),
   }
 }

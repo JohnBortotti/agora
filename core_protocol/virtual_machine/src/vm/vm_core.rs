@@ -1,33 +1,34 @@
 use uuid::Uuid;
-use crate::Server;
 use ethnum::U256;
 use std::collections::HashMap;
 use serde::Serialize;
-use serde_json::json;
-use std::sync::mpsc::{Receiver, RecvTimeoutError};
-use super::super::{jsonrpc, jsonrpc::JsonRpcResponse};
 use super::event::Event;
 use super::instruction;
 use super::instruction::Instruction;
-use super::ocaml_callback::{OcamlCallback, MockOcamlCallback};
+use crate::jsonrpc::deserialize_response;
 
 pub trait VMStateMachine {
-  fn poll(&mut self) -> (VMStatus, Option<VMEvent>);
+  fn poll(&mut self) -> VMStatus;
+  fn supply_data(&mut self, request_id: Uuid, data: String);
+  fn get_id(&self) -> Uuid;
+  fn get_contract_address(&self) -> String;
 }
 
+#[derive(Debug, Clone)]
 pub enum VMStatus {
-  Initialized,
+  Initializing,
   Running,
-  Pending { event: VMEvent },
+  Pending { request_id: Uuid, event: VMEvent },
   Finished { change_set: OverlayedChangeSet },
 }
 
+#[derive(Debug, Clone)]
 pub enum VMEvent {
   SpawnVM(Transaction),
-  RequestData(Uuid, String),
+  RequestData(String),
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct OverlayedChangeSet {
   pub status: bool,
   pub message: String,
@@ -62,16 +63,15 @@ pub struct Transaction {
 
 pub struct VM {
   pub id: Uuid,
-  pub rx: Receiver<String>,
   pub transaction: Transaction,
   pub storage: HashMap<String, U256>,
   pub stack: Vec<U256>,
   pub memory: Vec<u8>,
   pub pc: usize,
-  pub instructions: Vec<Instruction>,
+  pub instructions: Option<Vec<Instruction>>,
   pub state: VMStatus,
   pub overlayed_changeset: OverlayedChangeSet,
-  ocaml_callback: Box<dyn OcamlCallback>,
+  pub supplied_data: HashMap<Uuid, String>,
 }
 
 // TODO: 
@@ -115,72 +115,85 @@ pub struct VM {
 // 00 00                                                             // payload lenght (32 bytes)
 
 impl VMStateMachine for VM {
-  fn poll(&mut self) -> (VMStatus, Option<VMEvent>) {
+  fn poll(&mut self) -> VMStatus {
     match &self.state {
-      VMStatus::Initialized => {
-        match self.initialize_program() {
-          Ok(_) => {
+      VMStatus::Initializing => {
+        match self.supplied_data.get(&self.id) {
+          Some(data) => {
+            let res = deserialize_response(data).unwrap().result.unwrap()["code"].take();
+            println!("[VM] Data found: {}", res);
+            let instructions = Self::decode_program(res.to_string().as_str()).unwrap();
+            self.instructions = Some(instructions);
             self.state = VMStatus::Running;
-            (VMStatus::Running, None)
+            return self.state.clone();
           }
-          Err(err) => {
-            self.overlayed_changeset.status = false;
-            self.overlayed_changeset.message = err;
-            self.state = VMStatus::Finished {
-              change_set: self.overlayed_changeset
-            };
-            (VMStatus::Finished {
-              change_set: self.overlayed_changeset
-            }, None)
+          None => {
+            self.state = VMStatus::Initializing;
+            return self.state.clone();
           }
-        }
-      }
+      }}
       VMStatus::Running => {
         match self.execute_next_instruction() {
           Ok(event) => {
             match event {
               Some(event) => {
-                self.state = VMStatus::Pending { event };
-                (VMStatus::Pending { event }, None)
+                self.state = VMStatus::Pending { request_id: Uuid::new_v4(), event: event.clone() };
+                self.state.clone()
               }
-              None => (VMStatus::Running, None)
+              None => VMStatus::Running
             }
           }
           Err(err) => {
             self.overlayed_changeset.status = false;
             self.overlayed_changeset.message = err;
             self.state = VMStatus::Finished {
-              change_set: self.overlayed_changeset
+              change_set: self.overlayed_changeset.clone()
             };
-            (VMStatus::Finished {
-              change_set: self.overlayed_changeset
-            }, None)
+            self.state.clone()
           }
         }
       }
-      VMStatus::Pending { event } => {
+      VMStatus::Pending { request_id, event } => {
         match event {
-          VMEvent::SpawnVM(tx) => {
-            let server = Server::new();
-            let res = server.spawn_vm(tx.clone());
-            (VMStatus::Running, None)
-          }
-          VMEvent::RequestData(id, data) => {
-            let req = jsonrpc::serialize_request("get_data", json!([data]));
-            self.ocaml_callback.call(&self.id.to_string(), &req);
-            (VMStatus::Running, None)
+          | VMEvent::SpawnVM(_)
+          | VMEvent::RequestData(_) => {
+            match self.supplied_data.get(&request_id) {
+              Some(_) => {
+                self.state = VMStatus::Running;
+                self.state.clone()
+              }
+              None => {
+                self.state = VMStatus::Pending { 
+                  request_id: request_id.clone(),
+                  event: event.clone() 
+                };
+                self.state.clone()
+              }
+            }
           }
         }
       }
       VMStatus::Finished { change_set } => {
-        (VMStatus::Finished { change_set: *change_set }, None)
+        VMStatus::Finished { change_set: change_set.clone() }
       }
     }
+  }
+
+  fn supply_data(&mut self, request_id: Uuid, data: String) {
+    self.supplied_data.insert(request_id, data);
+  }
+
+  fn get_id(&self) -> Uuid {
+      self.id
+  }
+
+  fn get_contract_address(&self) -> String {
+      self.transaction.receiver.clone()
   }
 }
 
 impl VM {
-  pub fn new(id: Uuid, rx: Receiver<String>, transaction: Transaction, ocaml_callback: Box<dyn OcamlCallback>) -> Self {
+  pub fn new(id: Uuid, transaction: Transaction) -> Self {
     let initial_change_set = OverlayedChangeSet {
       status: true,
       message: "Success".to_string(),
@@ -192,64 +205,59 @@ impl VM {
       gas_remaining: transaction.gas_limit,
       gas_used: U256::from(0 as u64),
     };
-    
+
     VM {
       id,
-      rx,
       transaction: transaction.clone(),
       storage: HashMap::new(),
       stack: vec!(),
       memory: vec!(),
       pc: 0,
-      ocaml_callback,
-      instructions: vec![],              
-      state: VMStatus::Running,
-    overlayed_changeset: initial_change_set,
+      instructions: None,
+      state: VMStatus::Initializing,
+      overlayed_changeset: initial_change_set,
+      supplied_data: HashMap::new(),
     }
   }
 
-  fn initialize_program(&mut self) -> Result<(), String> {
-    println!(
-      "[VM] initializing: {} ; gas_limit: {}\n",
-      self.id, self.transaction.gas_limit
-      );
-
-    let program = self.fetch_contract_code(self.transaction.receiver.clone())?;
-    println!("[VM] fetched program: {}\n", program);
-
-    let bytecode = Self::parse_program_to_bytecode(&program)?;
+  fn decode_program(program_str: &str) -> Result<Vec<Instruction>, String> {
+    let bytecode = Self::parse_program_to_bytecode(program_str)?;
     let instructions = instruction::decode_bytecode_to_instruction(&bytecode)?;
-    self.instructions = instructions;
 
-    Ok(())
+    Ok(instructions)
   }
 
   fn execute_next_instruction(&mut self) -> Result<Option<VMEvent>, String> {
-    if self.pc >= self.instructions.len() {
-    self.state = VMStatus::Finished { change_set: self.overlayed_changeset };
-      return Ok(None);
-    }
+    match &self.instructions {
+      None => return Err("No instructions found".to_string()),
+      Some(instructions) => {
+        if self.pc >= instructions.len() {
+          self.state = VMStatus::Finished { change_set: self.overlayed_changeset.clone() };
+          return Ok(None);
+        }
 
-    let instruction = &self.instructions[self.pc];
-    let gas_cost = instruction::get_instruction_gas_cost(instruction);
+        let instruction = instructions[self.pc].clone();
+        let gas_cost = instruction::get_instruction_gas_cost(&instruction);
 
-    if self.overlayed_changeset.gas_remaining < U256::from(gas_cost) {
-      return Err("Out of gas".to_string());
-    }
+        if self.overlayed_changeset.gas_remaining < U256::from(gas_cost) {
+          return Err("Out of gas".to_string());
+        }
 
-    self.overlayed_changeset.gas_remaining -= U256::from(gas_cost);
+        self.overlayed_changeset.gas_remaining -= U256::from(gas_cost);
 
-    match self.execute_instruction(instruction) {
-      Ok(event) => {
-        Ok(event)
-      }
-      Err(err) => {
-        self.overlayed_changeset.status = false;
-        self.overlayed_changeset.message = err;
-        self.state = VMStatus::Finished {
-          change_set: self.overlayed_changeset
-        };
-        Err(err)
+        match self.execute_instruction(&instruction) {
+          Ok(event) => {
+            Ok(event)
+          }
+          Err(err) => {
+            self.overlayed_changeset.status = false;
+            self.overlayed_changeset.message = err.clone();
+            self.state = VMStatus::Finished {
+              change_set: self.overlayed_changeset.clone()
+            };
+            Err(err)
+          }
+        }
       }
     }
   }
@@ -581,17 +589,19 @@ impl VM {
 
         println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
         self.pc += 1;
-        Ok(Some(VMEvent::SpawnVM(Transaction {
-          hash: "hash".to_string(),
-          sender: self.transaction.receiver.clone(),
-          receiver: address.clone().to_string(),
-          amount: *amount,
-          gas_limit: *gas_limit,
-          gas_price: self.transaction.gas_price,
-          nonce: U256::from(0 as u64),
-          payload: payload.clone(),
-          signature: "signature".to_string(),
-        })))
+        Ok(Some(
+            VMEvent::SpawnVM(
+              Transaction {
+                hash: "hash".to_string(),
+                sender: self.transaction.receiver.clone(),
+                receiver: address.clone().to_string(),
+                amount: *amount,
+                gas_limit: *gas_limit,
+                gas_price: self.transaction.gas_price,
+                nonce: U256::from(0 as u64),
+                payload: payload.clone(),
+                signature: "signature".to_string(),
+              })))
       }
       Instruction::Transaction { receiver, amount } => {
         println!("[VM] INTERNAL_TRANSACTION:\nto: {}\namount: {}", receiver, amount);
@@ -622,7 +632,7 @@ impl VM {
       Instruction::Return => {
         println!("[VM] RETURN");
         self.state = VMStatus::Finished {
-        change_set: self.overlayed_changeset
+        change_set: self.overlayed_changeset.clone()
         };
         Ok(None)
       }
@@ -665,26 +675,26 @@ impl VM {
 
   // returns a internal transaction, if the VM returns an error to peer 
   // we can discard the transaction, otherwise the node executes it
-  fn make_transaction(&self, receiver: U256, amount: U256) -> Result<InternalTransaction, String> {
-    let req = jsonrpc::serialize_request(
-      "get_account",
-      json!([self.transaction.receiver.clone()])
-      );
-
-    let res = self.json_rpc(req).unwrap();
-    let balance = res.result.unwrap()["balance"].take().as_i64().unwrap();
-    let balance_u256 = U256::from(balance as u64);
-
-    if balance_u256 < amount {
-      return Err("Insufficient balance for internal_transaction".to_string())
-    } else {
-      Ok(InternalTransaction {
-        sender: self.transaction.receiver.clone(),
-        receiver: receiver.to_string(),
-        amount
-      })
-    }
-  }
+  // fn make_transaction(&self, receiver: U256, amount: U256) -> Result<InternalTransaction, String> {
+  //   let req = jsonrpc::serialize_request(
+  //     "get_account",
+  //     json!([self.transaction.receiver.clone()])
+  //     );
+  //
+  //   let res = self.json_rpc(req).unwrap();
+  //   let balance = res.result.unwrap()["balance"].take().as_i64().unwrap();
+  //   let balance_u256 = U256::from(balance as u64);
+  //
+  //   if balance_u256 < amount {
+  //     return Err("Insufficient balance for internal_transaction".to_string())
+  //   } else {
+  //     Ok(InternalTransaction {
+  //       sender: self.transaction.receiver.clone(),
+  //       receiver: receiver.to_string(),
+  //       amount
+  //     })
+  //   }
+  // }
 
   // fn execute_contract(&self, address: String, gas_limit: U256, amount: U256, payload: String) ->
   //   Result<OverlayedChangeSet, String> {
@@ -720,50 +730,47 @@ impl VM {
   //     })
   // }
 
-  fn fetch_contract_code(&self, contract_address: String) -> Result<String, String> {
-    let req = jsonrpc::serialize_request(
-      "get_code",
-      json!([contract_address])
-      );
-    let res = self.json_rpc(req).unwrap();
-    let code = res.result.unwrap()["code"].take();
-    Ok(code.to_string())
-  }
+  // fn fetch_contract_code(&self, contract_address: String) -> Result<String, String> {
+  //   let req = jsonrpc::serialize_request(
+  //     "get_code",
+  //     json!([contract_address])
+  //     );
+  //   let res = self.json_rpc(req).unwrap();
+  //   let code = res.result.unwrap()["code"].take();
+  //   Ok(code.to_string())
+  // }
 
   // internal function to make JSON-RPC request
-  fn json_rpc(&self, json: String) -> Result<JsonRpcResponse, String> {
-    println!("\n[VM] {} is making a JSON-RPC request: {}\n", self.id, json);
-
-    self.ocaml_callback.call(&self.id.to_string(), &json);
-
-    match self.rx.recv_timeout(std::time::Duration::from_secs(40)) {
-      Ok(message) => {
-        println!("[VM] Received message: {}", message);
-        return match jsonrpc::deserialize_response(&message) {
-          Ok(res) => Ok(res),
-          _ => Err("message deserialize error".to_string())
-        }
-      }
-      Err(RecvTimeoutError::Timeout) => {
-        println!("[VM] No message received within timeout.");
-        return Err("message timeout".to_string())
-      }
-      Err(RecvTimeoutError::Disconnected) => {
-        println!("[VM] Channel disconnected. Shutting down VM.");
-        return Err("channel disconnected".to_string())
-      }
-    };
-  }
+  // fn json_rpc(&self, json: String) -> Result<JsonRpcResponse, String> {
+  //   println!("\n[VM] {} is making a JSON-RPC request: {}\n", self.id, json);
+  //
+  //   self.ocaml_callback.call(&self.id.to_string(), &json);
+  //
+  //   match self.rx.recv_timeout(std::time::Duration::from_secs(40)) {
+  //     Ok(message) => {
+  //       println!("[VM] Received message: {}", message);
+  //       return match jsonrpc::deserialize_response(&message) {
+  //         Ok(res) => Ok(res),
+  //         _ => Err("message deserialize error".to_string())
+  //       }
+  //     }
+  //     Err(RecvTimeoutError::Timeout) => {
+  //       println!("[VM] No message received within timeout.");
+  //       return Err("message timeout".to_string())
+  //     }
+  //     Err(RecvTimeoutError::Disconnected) => {
+  //       println!("[VM] Channel disconnected. Shutting down VM.");
+  //       return Err("channel disconnected".to_string())
+  //     }
+  //   };
+  // }
 }
 
 mod tests {
   use super::*;
 
   fn mock_vm() -> VM {
-    let channel = std::sync::mpsc::channel();
-    let ocaml_callback = Box::new(MockOcamlCallback);
-       
-    VM::new(Uuid::new_v4(), channel.1, Transaction {
+    VM::new(Uuid::new_v4(), Transaction {
       hash: "hash".to_string(),
       sender: "sender".to_string(),
       receiver: "receiver".to_string(),
@@ -773,8 +780,8 @@ mod tests {
       nonce: U256::from(0 as u64),
       payload: "payload".to_string(),
       signature: "signature".to_string(),
-    }, ocaml_callback
-  )}
+    })
+  }
 
   #[test]
   fn test_parse_program_to_bytecode() {
