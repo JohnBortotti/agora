@@ -5,6 +5,8 @@ use serde::Serialize;
 use super::event::Event;
 use super::instruction;
 use super::instruction::Instruction;
+use crate::jsonrpc;
+use serde_json::json;
 use crate::jsonrpc::{deserialize_response, JsonRpcRequest};
 
 pub trait VMStateMachine {
@@ -23,7 +25,7 @@ pub enum VMStatus {
   Finished { change_set: OverlayedChangeSet },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum VMEvent {
   SpawnVM(Transaction),
   RequestData(JsonRpcRequest),
@@ -49,7 +51,7 @@ pub struct InternalTransaction {
   pub amount: U256,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Transaction {
   pub hash: String,
   pub sender: String,
@@ -76,12 +78,9 @@ pub struct VM {
 }
 
 // TODO: 
-// - [ ] nested contract calls
 // - [ ] pointers to handle string data
 //  - [ ] handle strings
 //  - [ ] handle dictionaries
-// - [x] emit events
-// - [x] internal transactions
 //
 //
 // examples:
@@ -132,7 +131,7 @@ impl VMStateMachine for VM {
             self.state = VMStatus::Initializing { request_id: request_id.clone() };
             return self.state.clone();
           }
-      }}
+        }}
       VMStatus::Running | VMStatus::ReceivedData { .. } => {
         match self.execute_next_instruction() {
           Ok(event) => {
@@ -295,360 +294,395 @@ impl VM {
 
   fn execute_instruction(&mut self, instruction: &Instruction) 
     -> Result<Option<VMEvent>, String> {
-    match instruction {
-      // stack operation
-      Instruction::Push { value } => {
-        self.stack.push(*value);
-        println!("[VM] PUSH {}", value);
-        self.pc += 1;
-        Ok(None)
-      }
-      Instruction::Pop => {
-        if let Some(value) = self.stack.pop() {
-          println!("[VM] POP {}", value);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] POP failed: stack is empty".to_string())
-        }
-      }
-
-      // arithmetic operations
-      Instruction::Add => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = a + b;
-          self.stack.push(result);
-          println!("[VM] ADD {} + {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] ADD failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Sub => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = b - a;
-          self.stack.push(result);
-          println!("[VM] SUB {} - {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] SUB failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Mul => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = a * b;
-          self.stack.push(result);
-          println!("[VM] MUL {} * {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] MUL failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Div => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          if a == 0 {
-            println!("[VM] DIV failed: division by zero");
-            self.stack.push(U256::from(0 as u64));
-            Err("[VM] DIV failed: division by zero".to_string())
-          } else {
-            let result = b / a;
-            self.stack.push(result);
-            println!("[VM] DIV {} / {} = {}", b, a, result);
-            self.pc += 1;
-            Ok(None)
-          }
-        } else {
-          Err("[VM] DIV failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Mod => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          if a == 0 {
-            println!("[VM] MOD failed: division by zero");
-            self.stack.push(U256::from(0 as u64));
-            Err("[VM] MOD failed: division by zero".to_string())
-          } else {
-            let result = b % a;
-            self.stack.push(result);
-            println!("[VM] MOD {} % {} = {}", b, a, result);
-            self.pc += 1;
-            Ok(None)
-          }
-        } else {
-          Err("[VM] MOD failed: insufficient operands on stack".to_string())
-        }
-      }
-
-      // logical/comparison operations
-      Instruction::Eq => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if a == b { 1 as u64 } else { 0 as u64 };
-          self.stack.push(result.into());
-          println!("[VM] EQ {} == {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] EQ failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Ne => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if a != b { 1 as u64 } else { 0 as u64 };
-          self.stack.push(result.into());
-          println!("[VM] NE {} != {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] NE failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Lt => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if b < a { 1 as u64 } else { 0 as u64 };
-          self.stack.push(result.into());
-          println!("[VM] LT {} < {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] LT failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Gt => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if b > a { 1 } else { 0 };
-          self.stack.push(U256::from(result as u64));
-          println!("[VM] GT {} > {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] GT failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Le => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if b <= a { 1 } else { 0 };
-          self.stack.push(U256::from(result as u64));
-          println!("[VM] LE {} <= {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] LE failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Ge => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = if b >= a { 1 } else { 0 };
-          self.stack.push(U256::from(result as u64));
-          println!("[VM] GE {} >= {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] GE failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::And => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = a & b;
-          self.stack.push(result);
-          println!("[VM] AND {} & {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] AND failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Or => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = a | b;
-          self.stack.push(result);
-          println!("[VM] OR {} | {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] OR failed: insufficient operands on stack".to_string())
-        }
-      }
-
-      // bitwise operations
-      Instruction::BAnd => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = a & b;
-          self.stack.push(result);
-          println!("[VM] AND {} & {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] AND failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::BOr => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = a | b;
-          self.stack.push(result);
-          println!("[VM] OR {} | {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] OR failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::BXor => {
-        if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
-          let result = a ^ b;
-          self.stack.push(result);
-          println!("[VM] XOR {} ^ {} = {}", b, a, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] XOR failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::BNot => {
-        if let Some(a) = self.stack.pop() {
-          let result = !a;
-          self.stack.push(result);
-          println!("[VM] NOT !{}", a);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] NOT failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Shl { shift } => {
-        if let Some(a) = self.stack.pop() {
-          let result = a << shift;
-          self.stack.push(result);
-          println!("[VM] SHL {} << {} = {}", a, shift, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] SHL failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Shr { shift } => {
-        if let Some(a) = self.stack.pop() {
-          let result = a >> shift;
-          self.stack.push(result);
-          println!("[VM] SHR {} >> {} = {}", a, shift, result);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] SHR failed: insufficient operands on stack".to_string())
-        }
-      }
-
-      // storage operations
-      Instruction::Set { key } => {
-        if let Some(value) = self.stack.pop() {
-          self.storage.insert(key.clone(), value);
-          println!("[VM] SET {} = {}", key, value);
-          self.pc += 1;
-          Ok(None)
-        } else {
-          Err("[VM] SET failed: insufficient operands on stack".to_string())
-        }
-      }
-      Instruction::Get { key } => {
-        if let Some(value) = self.storage.get(key) {
+      match instruction {
+        // stack operation
+        Instruction::Push { value } => {
           self.stack.push(*value);
-          println!("[VM] GET {} = {}", key, value);
+          println!("[VM] PUSH {}", value);
           self.pc += 1;
           Ok(None)
-        } else {
-          Err("[VM] GET failed: key not found in storage".to_string())
         }
-      }
-      
-      // control flow operations
-      Instruction::Jump { destination } => {
-        println!("[VM] JUMP {}", destination);
-        self.pc = *destination;
-        Ok(None)
-      }
-      Instruction::JumpIf { destination } => {
-        if let Some(condition) = self.stack.pop() {
-          if condition != 0 {
-            println!("[VM] JUMPIF {}", destination);
-            self.pc = *destination;
-          } else {
+        Instruction::Pop => {
+          if let Some(value) = self.stack.pop() {
+            println!("[VM] POP {}", value);
             self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] POP failed: stack is empty".to_string())
           }
-          Ok(None)
-        } else {
-          Err("[VM] JUMPIF failed: insufficient operands on stack".to_string())
         }
-      }
-      Instruction::Halt { message } => {
-        println!("[VM] HALT");
-        Err(message.to_string())
-      }
-      
-      // call/message operations
-      Instruction::Call { address, gas_limit, amount, payload } => {
-        println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
 
-        match &self.state {
-          VMStatus::ReceivedData { request_id } => {
-            match self.supplied_data.get(request_id) {
-              Some(data) => {
-                self.pc += 1;
-                println!("[VM] CONTRACT CALL FINISHED: {}", data);
-                Ok(None)
-              }
-              None => {
-                Ok(Some(
-                    VMEvent::SpawnVM(
-                      Transaction {
-                        hash: "hash".to_string(),
-                        sender: self.transaction.receiver.clone(),
-                        receiver: address.clone().to_string(),
-                        amount: *amount,
-                        gas_limit: *gas_limit,
-                        gas_price: self.transaction.gas_price,
-                        nonce: U256::from(0 as u64),
-                        payload: payload.clone(),
-                        signature: "signature".to_string(),
-                      })))
+        // arithmetic operations
+        Instruction::Add => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = a + b;
+            self.stack.push(result);
+            println!("[VM] ADD {} + {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] ADD failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Sub => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = b - a;
+            self.stack.push(result);
+            println!("[VM] SUB {} - {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] SUB failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Mul => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = a * b;
+            self.stack.push(result);
+            println!("[VM] MUL {} * {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] MUL failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Div => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            if a == 0 {
+              println!("[VM] DIV failed: division by zero");
+              self.stack.push(U256::from(0 as u64));
+              Err("[VM] DIV failed: division by zero".to_string())
+            } else {
+              let result = b / a;
+              self.stack.push(result);
+              println!("[VM] DIV {} / {} = {}", b, a, result);
+              self.pc += 1;
+              Ok(None)
+            }
+          } else {
+            Err("[VM] DIV failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Mod => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            if a == 0 {
+              println!("[VM] MOD failed: division by zero");
+              self.stack.push(U256::from(0 as u64));
+              Err("[VM] MOD failed: division by zero".to_string())
+            } else {
+              let result = b % a;
+              self.stack.push(result);
+              println!("[VM] MOD {} % {} = {}", b, a, result);
+              self.pc += 1;
+              Ok(None)
+            }
+          } else {
+            Err("[VM] MOD failed: insufficient operands on stack".to_string())
+          }
+        }
+
+        // logical/comparison operations
+        Instruction::Eq => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = if a == b { 1 as u64 } else { 0 as u64 };
+            self.stack.push(result.into());
+            println!("[VM] EQ {} == {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] EQ failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Ne => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = if a != b { 1 as u64 } else { 0 as u64 };
+            self.stack.push(result.into());
+            println!("[VM] NE {} != {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] NE failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Lt => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = if b < a { 1 as u64 } else { 0 as u64 };
+            self.stack.push(result.into());
+            println!("[VM] LT {} < {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] LT failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Gt => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = if b > a { 1 } else { 0 };
+            self.stack.push(U256::from(result as u64));
+            println!("[VM] GT {} > {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] GT failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Le => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = if b <= a { 1 } else { 0 };
+            self.stack.push(U256::from(result as u64));
+            println!("[VM] LE {} <= {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] LE failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Ge => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = if b >= a { 1 } else { 0 };
+            self.stack.push(U256::from(result as u64));
+            println!("[VM] GE {} >= {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] GE failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::And => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = a & b;
+            self.stack.push(result);
+            println!("[VM] AND {} & {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] AND failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Or => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = a | b;
+            self.stack.push(result);
+            println!("[VM] OR {} | {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] OR failed: insufficient operands on stack".to_string())
+          }
+        }
+
+        // bitwise operations
+        Instruction::BAnd => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = a & b;
+            self.stack.push(result);
+            println!("[VM] AND {} & {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] AND failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::BOr => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = a | b;
+            self.stack.push(result);
+            println!("[VM] OR {} | {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] OR failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::BXor => {
+          if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
+            let result = a ^ b;
+            self.stack.push(result);
+            println!("[VM] XOR {} ^ {} = {}", b, a, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] XOR failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::BNot => {
+          if let Some(a) = self.stack.pop() {
+            let result = !a;
+            self.stack.push(result);
+            println!("[VM] NOT !{}", a);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] NOT failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Shl { shift } => {
+          if let Some(a) = self.stack.pop() {
+            let result = a << shift;
+            self.stack.push(result);
+            println!("[VM] SHL {} << {} = {}", a, shift, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] SHL failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Shr { shift } => {
+          if let Some(a) = self.stack.pop() {
+            let result = a >> shift;
+            self.stack.push(result);
+            println!("[VM] SHR {} >> {} = {}", a, shift, result);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] SHR failed: insufficient operands on stack".to_string())
+          }
+        }
+
+        // storage operations
+        Instruction::Set { key } => {
+          if let Some(value) = self.stack.pop() {
+            self.storage.insert(key.clone(), value);
+            println!("[VM] SET {} = {}", key, value);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] SET failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Get { key } => {
+          if let Some(value) = self.storage.get(key) {
+            self.stack.push(*value);
+            println!("[VM] GET {} = {}", key, value);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] GET failed: key not found in storage".to_string())
+          }
+        }
+
+        // control flow operations
+        Instruction::Jump { destination } => {
+          println!("[VM] JUMP {}", destination);
+          self.pc = *destination;
+          Ok(None)
+        }
+        Instruction::JumpIf { destination } => {
+          if let Some(condition) = self.stack.pop() {
+            if condition != 0 {
+              println!("[VM] JUMPIF {}", destination);
+              self.pc = *destination;
+            } else {
+              self.pc += 1;
+            }
+            Ok(None)
+          } else {
+            Err("[VM] JUMPIF failed: insufficient operands on stack".to_string())
+          }
+        }
+        Instruction::Halt { message } => {
+          println!("[VM] HALT");
+          Err(message.to_string())
+        }
+
+        // call/message operations
+        Instruction::Call { address, gas_limit, amount, payload } => {
+          println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
+
+          match &self.state {
+            VMStatus::ReceivedData { request_id } => {
+              match self.supplied_data.get(request_id) {
+                Some(data) => {
+                  self.pc += 1;
+                  self.state = VMStatus::Running;
+                  println!("[VM] CONTRACT CALL FINISHED: {}", data);
+                  Ok(None)
+                }
+                None => {
+                  Ok(Some(
+                      VMEvent::SpawnVM(
+                        Transaction {
+                          hash: "hash".to_string(),
+                          sender: self.transaction.receiver.clone(),
+                          receiver: address.clone().to_string(),
+                          amount: *amount,
+                          gas_limit: *gas_limit,
+                          gas_price: self.transaction.gas_price,
+                          nonce: U256::from(0 as u64),
+                          payload: payload.clone(),
+                          signature: "signature".to_string(),
+                        })))
+                }
               }
             }
-          }
-          _ => {
-            Ok(Some(
-                VMEvent::SpawnVM(
-                  Transaction {
-                    hash: "hash".to_string(),
-                    sender: self.transaction.receiver.clone(),
-                    receiver: address.clone().to_string(),
-                    amount: *amount,
-                    gas_limit: *gas_limit,
-                    gas_price: self.transaction.gas_price,
-                    nonce: U256::from(0 as u64),
-                    payload: payload.clone(),
-                    signature: "signature".to_string(),
-                  })))
+            _ => {
+              Ok(Some(
+                  VMEvent::SpawnVM(
+                    Transaction {
+                      hash: "hash".to_string(),
+                      sender: self.transaction.receiver.clone(),
+                      receiver: address.clone().to_string(),
+                      amount: *amount,
+                      gas_limit: *gas_limit,
+                      gas_price: self.transaction.gas_price,
+                      nonce: U256::from(0 as u64),
+                      payload: payload.clone(),
+                      signature: "signature".to_string(),
+                    })))
+            }
           }
         }
+        Instruction::Transaction { receiver, amount } => {
+          println!("[VM] TRANSACTION {} {}", receiver, amount);
 
-        // let mut call_changeset = 
-        //   self.execute_contract(address.to_string(), *gas_limit, *amount, payload.clone())?;
+          match self.state {
+            VMStatus::ReceivedData { request_id } => {
+              match self.supplied_data.get(&request_id) {
+                None => {
+                  let req = jsonrpc::new_request(
+                    "get_account",
+                    json!([self.transaction.receiver.clone()])
+                    );
+                  Ok(Some(
+                      VMEvent::RequestData(req)
+                      ))
+                }
+                Some(data) => {
+                  self.pc += 1;
 
-        // self.internal_transactions.append(&mut call_changeset.internal_transactions);
-        // self.events.append(&mut call_changeset.events);
-        // self.gas_remaining -= call_changeset.gas_used;
-      }
-      Instruction::Transaction { receiver, amount } => {
-        println!("[VM] INTERNAL_TRANSACTION:\nto: {}\namount: {}", receiver, amount);
-        // TODO: implement here
-        // let tx = self.make_transaction(*receiver, *amount)?;
-        // self.internal_transactions.push(tx);
-        self.pc += 1;
-        Ok(None)
-      }
-      Instruction::Emit { event_name, data, topic1, topic2, topic3 } => {
-        println!("[VM] EMIT: \n
+                  let balance = 
+                    jsonrpc::deserialize_response(data).unwrap()
+                    .result.unwrap()["balance"].take().as_i64().unwrap();
+                  let balance_u256 = U256::from(balance as u64);
+
+                  if balance_u256 < *amount {
+                    return Err("Insufficient balance for internal_transaction".to_string())
+                  } else {
+                    self.overlayed_changeset.internal_transactions.push(InternalTransaction {
+                      sender: self.transaction.receiver.clone(),
+                      receiver: receiver.to_string(),
+                      amount: *amount
+                    });
+
+                    Ok(None)
+                  }
+
+                }
+              }
+            }
+            _ => {
+              let req = jsonrpc::new_request(
+                "get_account",
+                json!([self.transaction.receiver.clone()])
+                );
+              Ok(Some(
+                  VMEvent::RequestData(req)
+                  ))
+            }
+          }
+        }
+        Instruction::Emit { event_name, data, topic1, topic2, topic3 } => {
+          println!("[VM] EMIT: \n
                  name: {}\n
                  topic1: {}\n
                  topic2\n {}\n
@@ -656,150 +690,58 @@ impl VM {
                  data: {:?}",
                  event_name, topic1, topic2, topic3, data);
 
-        self.overlayed_changeset.events.push(Event {
-          name: event_name.clone(),
-          address: self.transaction.receiver.clone(),
-          topics: vec![*topic1, *topic2, *topic3],
-          data: data.clone(),
-        });
-        self.pc += 1;
-        Ok(None)
-      }
-      Instruction::Return => {
-        println!("[VM] RETURN");
-        self.state = VMStatus::Finished {
-        change_set: self.overlayed_changeset.clone()
-        };
-        Ok(None)
-      }
+          self.overlayed_changeset.events.push(Event {
+            name: event_name.clone(),
+            address: self.transaction.receiver.clone(),
+            topics: vec![*topic1, *topic2, *topic3],
+            data: data.clone(),
+          });
+          self.pc += 1;
+          Ok(None)
+        }
+        Instruction::Return => {
+          println!("[VM] RETURN");
+          self.state = VMStatus::Finished {
+            change_set: self.overlayed_changeset.clone()
+          };
+          Ok(None)
+        }
 
-      // environment operations
-      Instruction::GetBalance { address } => {
-        println!("[VM] GETBALANCE {}", address);
-        self.pc += 1;
-        Ok(None)
-      }
-      Instruction::GetCaller => {
-        println!("[VM] GETCALLER");
-        self.pc += 1;
-        Ok(None)
-      }
-      Instruction::GetCallValue => {
-        println!("[VM] GETCALLVALUE");
-        self.stack.push(self.transaction.amount);
-        self.pc += 1;
-        Ok(None)
-      }
-      Instruction::GetGasPrice => {
-        println!("[VM] GETGASPRICE");
-        self.stack.push(self.transaction.gas_price);
-        self.pc += 1;
-        Ok(None)
-      }
-      Instruction::GetBlockNumber => {
-        println!("[VM] GETBLOCKNUMBER");
-        self.pc += 1;
-        Ok(None)
-      }
-      Instruction::GetBlockTimestamp => {
-        println!("[VM] GETBLOCKTIMESTAMP");
-        self.pc += 1;
-        Ok(None)
+        // environment operations
+        Instruction::GetBalance { address } => {
+          println!("[VM] GETBALANCE {}", address);
+          self.pc += 1;
+          Ok(None)
+        }
+        Instruction::GetCaller => {
+          println!("[VM] GETCALLER");
+          self.pc += 1;
+          Ok(None)
+        }
+        Instruction::GetCallValue => {
+          println!("[VM] GETCALLVALUE");
+          self.stack.push(self.transaction.amount);
+          self.pc += 1;
+          Ok(None)
+        }
+        Instruction::GetGasPrice => {
+          println!("[VM] GETGASPRICE");
+          self.stack.push(self.transaction.gas_price);
+          self.pc += 1;
+          Ok(None)
+        }
+        Instruction::GetBlockNumber => {
+          println!("[VM] GETBLOCKNUMBER");
+          self.pc += 1;
+          Ok(None)
+        }
+        Instruction::GetBlockTimestamp => {
+          println!("[VM] GETBLOCKTIMESTAMP");
+          self.pc += 1;
+          Ok(None)
+        }
       }
     }
-  }
-
-  // returns a internal transaction, if the VM returns an error to peer 
-  // we can discard the transaction, otherwise the node executes it
-  // fn make_transaction(&self, receiver: U256, amount: U256) -> Result<InternalTransaction, String> {
-  //   let req = jsonrpc::serialize_request(
-  //     "get_account",
-  //     json!([self.transaction.receiver.clone()])
-  //     );
-  //
-  //   let res = self.json_rpc(req).unwrap();
-  //   let balance = res.result.unwrap()["balance"].take().as_i64().unwrap();
-  //   let balance_u256 = U256::from(balance as u64);
-  //
-  //   if balance_u256 < amount {
-  //     return Err("Insufficient balance for internal_transaction".to_string())
-  //   } else {
-  //     Ok(InternalTransaction {
-  //       sender: self.transaction.receiver.clone(),
-  //       receiver: receiver.to_string(),
-  //       amount
-  //     })
-  //   }
-  // }
-
-  // fn execute_contract(&self, address: String, gas_limit: U256, amount: U256, payload: String) ->
-  //   Result<OverlayedChangeSet, String> {
-  //     if gas_limit > self.gas_remaining {
-  //       return Err("Insufficient gas for contract call".to_string())
-  //     }
-  //     
-  //     let server = Server::new();
-  //     let res = server.spawn_vm(Transaction {
-  //       hash: "hash".to_string(),
-  //       sender: self.transaction.receiver.clone(),
-  //       receiver: address.clone(),
-  //       amount,
-  //       gas_limit,
-  //       gas_price: self.transaction.gas_price,
-  //       nonce: U256::from(0 as u64),
-  //       payload,
-  //       signature: "signature".to_string(),
-  //     });
-  //
-  //     // println!("[VM] DEBUG DEBUG Contract call result: {}", res);
-  //
-  //     Ok(OverlayedChangeSet{
-  //       status: true,
-  //       message: "Success".to_string(),
-  //       vm_id: Uuid::new_v4(),
-  //       parent_vm: Some(self.id),
-  //       events: vec!(),
-  //       internal_transactions: vec!(),
-  //       gas_limit,
-  //       gas_used: U256::from(0 as u64),
-  //       gas_remaining: gas_limit,
-  //     })
-  // }
-
-  // fn fetch_contract_code(&self, contract_address: String) -> Result<String, String> {
-  //   let req = jsonrpc::serialize_request(
-  //     "get_code",
-  //     json!([contract_address])
-  //     );
-  //   let res = self.json_rpc(req).unwrap();
-  //   let code = res.result.unwrap()["code"].take();
-  //   Ok(code.to_string())
-  // }
-
-  // internal function to make JSON-RPC request
-  // fn json_rpc(&self, json: String) -> Result<JsonRpcResponse, String> {
-  //   println!("\n[VM] {} is making a JSON-RPC request: {}\n", self.id, json);
-  //
-  //   self.ocaml_callback.call(&self.id.to_string(), &json);
-  //
-  //   match self.rx.recv_timeout(std::time::Duration::from_secs(40)) {
-  //     Ok(message) => {
-  //       println!("[VM] Received message: {}", message);
-  //       return match jsonrpc::deserialize_response(&message) {
-  //         Ok(res) => Ok(res),
-  //         _ => Err("message deserialize error".to_string())
-  //       }
-  //     }
-  //     Err(RecvTimeoutError::Timeout) => {
-  //       println!("[VM] No message received within timeout.");
-  //       return Err("message timeout".to_string())
-  //     }
-  //     Err(RecvTimeoutError::Disconnected) => {
-  //       println!("[VM] Channel disconnected. Shutting down VM.");
-  //       return Err("channel disconnected".to_string())
-  //     }
-  //   };
-  // }
 }
 
 mod tests {
@@ -1026,16 +968,6 @@ mod tests {
     assert_eq!(vm.pc, 1);
   }
 
-  // #[test]
-  // fn test_instruction_bnot() {
-  //   let mut vm = mock_vm();
-  //   vm.stack.push(U256::from(3 as u64));
-  //   let instruction = Instruction::BNot;
-  //   vm.execute_instruction(&instruction).unwrap();
-  //   assert_eq!(vm.stack, vec![U256::from(0 as u64)]);
-  //   assert_eq!(vm.pc, 1);
-  // }
-
   #[test]
   fn test_instruction_shl() {
     let mut vm = mock_vm();
@@ -1092,35 +1024,35 @@ mod tests {
     assert_eq!(vm.pc, 1);
   }
 
-  // #[test]
-  // fn test_instruction_halt() {
-  //   let mut vm = mock_vm();
-  //   let instruction = Instruction::Halt { message: "custom_error_message".to_string() };
-  //   let result = vm.execute_instruction(&instruction);
-  //   assert_eq!(result, Err("custom_error_message".to_string()));
-  // }
+  #[test]
+  fn test_instruction_halt() {
+    let mut vm = mock_vm();
+    let instruction = Instruction::Halt { message: "custom_error_message".to_string() };
+    let result = vm.execute_instruction(&instruction);
+    assert_eq!(result, Err("custom_error_message".to_string()));
+  }
 
-  // #[test]
-  // fn test_instruction_emit() {
-  //   let mut vm = mock_vm();
-  //   let instruction = Instruction::Emit { 
-  //     event_name: "event".to_string(),
-  //     data: "data".to_string().into(),
-  //     topic1: U256::from(1 as u32),
-  //     topic2: U256::from(2 as u32),
-  //     topic3: U256::from(3 as u32),
-  //   };
-  //   vm.execute_instruction(&instruction).unwrap();
-  //   assert_eq!(vm.events, vec![Event {
-  //     name: "event".to_string(),
-  //     address: vm.transaction.receiver.clone(),
-  //     topics: vec![
-  //       U256::from(1 as u32),
-  //       U256::from(2 as u32),
-  //       U256::from(3 as u32),
-  //     ],
-  //     data: "data".to_string().into(),
-  //   }]);
-  //   assert_eq!(vm.pc, 1);
-  // }
+  #[test]
+  fn test_instruction_emit() {
+    let mut vm = mock_vm();
+    let instruction = Instruction::Emit { 
+      event_name: "event".to_string(),
+      data: "data".to_string().into(),
+      topic1: U256::from(1 as u32),
+      topic2: U256::from(2 as u32),
+      topic3: U256::from(3 as u32),
+    };
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.overlayed_changeset.events, vec![Event {
+      name: "event".to_string(),
+      address: vm.transaction.receiver.clone(),
+      topics: vec![
+        U256::from(1 as u32),
+        U256::from(2 as u32),
+        U256::from(3 as u32),
+      ],
+      data: "data".to_string().into(),
+    }]);
+    assert_eq!(vm.pc, 1);
+  }
 }

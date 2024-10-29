@@ -99,7 +99,7 @@ impl Server {
                     request_id,
                     json_req.params,
                   );
-                  self.ocaml_callback.call(&last_vm.get_id().to_string(), &serialized);
+                  self.ocaml_callback.call(&request_id.to_string(), &serialized);
                 }
               }
                           

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct JsonRpcRequest {
   pub jsonrpc: String,
   pub method: String,
@@ -16,6 +16,15 @@ pub struct JsonRpcResponse {
   pub result: Option<serde_json::Value>,
   pub error: Option<serde_json::Value>,
   pub id: String,
+}
+
+pub fn new_request(method: &str, params: serde_json::Value) -> JsonRpcRequest {
+  JsonRpcRequest {
+    jsonrpc: "2.0".to_string(),
+    method: method.to_string(),
+    params,
+    id: Uuid::new_v4().to_string(),
+  }
 }
 
 pub fn serialize_request(method: &str, request_id: Uuid, params: serde_json::Value) -> String {
