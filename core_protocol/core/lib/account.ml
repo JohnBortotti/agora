@@ -172,7 +172,7 @@ module Account = struct
                 storage_root = "";
                 code_hash = "";
               }
-            | Some acc -> acc
+            | Some acc -> { acc with balance = acc.balance + tx.amount }
           in
 
           (* send amount to receiver *)

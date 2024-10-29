@@ -1,7 +1,7 @@
 use uuid::Uuid;
 use ethnum::U256;
 use std::collections::HashMap;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use super::event::Event;
 use super::instruction;
 use super::instruction::Instruction;
@@ -25,18 +25,17 @@ pub enum VMStatus {
   Finished { change_set: OverlayedChangeSet },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub enum VMEvent {
   SpawnVM(Transaction),
   RequestData(JsonRpcRequest),
 }
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OverlayedChangeSet {
   pub status: bool,
   pub message: String,
   pub vm_id: Uuid,
-  pub parent_vm: Option<Uuid>,
   pub events: Vec<Event>,
   pub internal_transactions: Vec<InternalTransaction>,
   pub gas_limit: U256,
@@ -44,14 +43,14 @@ pub struct OverlayedChangeSet {
   pub gas_remaining: U256,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct InternalTransaction {
   pub sender: String,
   pub receiver: String,
   pub amount: U256,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct Transaction {
   pub hash: String,
   pub sender: String,
@@ -196,7 +195,6 @@ impl VM {
       status: true,
       message: "Success".to_string(),
       vm_id: id,
-      parent_vm: None,
       events: vec![],
       internal_transactions: vec![],
       gas_limit: transaction.gas_limit,
@@ -593,9 +591,16 @@ impl VM {
             VMStatus::ReceivedData { request_id } => {
               match self.supplied_data.get(request_id) {
                 Some(data) => {
+                  let result_overlay: OverlayedChangeSet = serde_json::from_str(data).unwrap();
                   self.pc += 1;
                   self.state = VMStatus::Running;
                   println!("[VM] CONTRACT CALL FINISHED: {}", data);
+                  self.overlayed_changeset.events
+                    .append(&mut result_overlay.events.clone());
+                  self.overlayed_changeset.internal_transactions
+                    .append(&mut result_overlay.internal_transactions.clone());
+                  self.overlayed_changeset.gas_used += result_overlay.gas_used;
+                  self.overlayed_changeset.gas_remaining -= result_overlay.gas_used;
                   Ok(None)
                 }
                 None => {

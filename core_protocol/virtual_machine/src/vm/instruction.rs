@@ -42,8 +42,8 @@ pub enum Instruction {
 
   // call/message operations
   // TODO: unit tests
-  Call { address: U256, gas_limit: U256, amount: U256, payload: String },
-  Transaction { receiver: U256, amount: U256 },
+  Call { address: String, gas_limit: U256, amount: U256, payload: String },
+  Transaction { receiver: String, amount: U256 },
   Emit { event_name: String, topic1: U256, topic2: U256, topic3: U256, data: Vec<u8> },
   Return,
 
@@ -283,8 +283,8 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
         }
 
         // decode the 32-byte address.
-        let address = U256::from_be_bytes(bytecode[i + 1..i + 33].try_into()
-          .map_err(|_| "Invalid address".to_string())?);
+        let address_bytes = &bytecode[i + 1..i + 33];
+        let address_str = format!("{}", hex::encode(address_bytes));
 
         // decode the 32-byte gas limit.
         let gas_limit = U256::from_be_bytes(bytecode[i + 33..i + 65].try_into()
@@ -309,7 +309,7 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
           String::new()
         };
 
-        instructions.push(Instruction::Call { address, gas_limit, amount, payload });
+        instructions.push(Instruction::Call { address: address_str, gas_limit, amount, payload });
 
         i += 99 + payload_len;
       },
@@ -364,10 +364,12 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
           return Err("Transaction instruction expects sender, receiver, and amount".to_string());
         }
 
-        let receiver = U256::from_be_bytes(bytecode[i + 1..i + 33].try_into().unwrap());
+        let receiver_bytes = &bytecode[i + 1..i + 33];
+        let receiver_str = format!("{}", hex::encode(receiver_bytes));
+        // let receiver = U256::from_be_bytes(bytecode[i + 1..i + 33].try_into().unwrap());
         let amount = U256::from_be_bytes(bytecode[i + 33..i + 65].try_into().unwrap());
 
-        instructions.push(Instruction::Transaction { receiver, amount });
+        instructions.push(Instruction::Transaction { receiver: receiver_str, amount });
 
         i += 65;
       }
@@ -669,9 +671,7 @@ mod tests {
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
       vec![Instruction::Call {
-        address: U256::from_str_hex(
-          "0x4d8bbd4e450f1f604139b50fd0fdbebe662e7e17350fd2b31359d7b49c388a50"
-        ).unwrap(),
+        address: "4d8bbd4e450f1f604139b50fd0fdbebe662e7e17350fd2b31359d7b49c388a50".to_string(),
         gas_limit: 35u32.into(),
         amount: 0u32.into(),
         payload: "".to_string()
@@ -689,9 +689,7 @@ mod tests {
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
       vec![Instruction::Transaction {
-        receiver: U256::from_str_hex(
-          "0x5d8bbd4e450f1f604139b50fd0fdbabc662e7e17350fd2b31359d7b49c388a21"
-        ).unwrap(),
+        receiver: "5d8bbd4e450f1f604139b50fd0fdbabc662e7e17350fd2b31359d7b49c388a21".to_string(),
         amount: 2u32.into()
       }]
       );
