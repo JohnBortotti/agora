@@ -5,7 +5,7 @@ use serde::Serialize;
 use super::event::Event;
 use super::instruction;
 use super::instruction::Instruction;
-use crate::jsonrpc::deserialize_response;
+use crate::jsonrpc::{deserialize_response, JsonRpcRequest};
 
 pub trait VMStateMachine {
   fn poll(&mut self) -> VMStatus;
@@ -16,16 +16,17 @@ pub trait VMStateMachine {
 
 #[derive(Debug, Clone)]
 pub enum VMStatus {
-  Initializing,
+  Initializing { request_id: Uuid },
   Running,
   Pending { request_id: Uuid, event: VMEvent },
+  ReceivedData { request_id: Uuid },
   Finished { change_set: OverlayedChangeSet },
 }
 
 #[derive(Debug, Clone)]
 pub enum VMEvent {
   SpawnVM(Transaction),
-  RequestData(String),
+  RequestData(JsonRpcRequest),
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -117,8 +118,8 @@ pub struct VM {
 impl VMStateMachine for VM {
   fn poll(&mut self) -> VMStatus {
     match &self.state {
-      VMStatus::Initializing => {
-        match self.supplied_data.get(&self.id) {
+      VMStatus::Initializing { request_id } => {
+        match self.supplied_data.get(request_id) {
           Some(data) => {
             let res = deserialize_response(data).unwrap().result.unwrap()["code"].take();
             println!("[VM] Data found: {}", res);
@@ -128,11 +129,11 @@ impl VMStateMachine for VM {
             return self.state.clone();
           }
           None => {
-            self.state = VMStatus::Initializing;
+            self.state = VMStatus::Initializing { request_id: request_id.clone() };
             return self.state.clone();
           }
       }}
-      VMStatus::Running => {
+      VMStatus::Running | VMStatus::ReceivedData { .. } => {
         match self.execute_next_instruction() {
           Ok(event) => {
             match event {
@@ -153,23 +154,11 @@ impl VMStateMachine for VM {
           }
         }
       }
-      VMStatus::Pending { request_id, event } => {
+      VMStatus::Pending { request_id: _, event } => {
         match event {
-          | VMEvent::SpawnVM(_)
+          | VMEvent::SpawnVM(_) 
           | VMEvent::RequestData(_) => {
-            match self.supplied_data.get(&request_id) {
-              Some(_) => {
-                self.state = VMStatus::Running;
-                self.state.clone()
-              }
-              None => {
-                self.state = VMStatus::Pending { 
-                  request_id: request_id.clone(),
-                  event: event.clone() 
-                };
-                self.state.clone()
-              }
-            }
+            self.state.clone()
           }
         }
       }
@@ -180,15 +169,25 @@ impl VMStateMachine for VM {
   }
 
   fn supply_data(&mut self, request_id: Uuid, data: String) {
+    println!("[VM] Data supplied, id: {}", request_id);
     self.supplied_data.insert(request_id, data);
+
+    match self.state {
+      VMStatus::Initializing { .. } => {
+        self.state = VMStatus::Initializing { request_id }
+      }
+      _ => {
+        self.state = VMStatus::ReceivedData { request_id };
+      }
+    }
   }
 
   fn get_id(&self) -> Uuid {
-      self.id
+    self.id
   }
 
   fn get_contract_address(&self) -> String {
-      self.transaction.receiver.clone()
+    self.transaction.receiver.clone()
   }
 }
 
@@ -214,7 +213,7 @@ impl VM {
       memory: vec!(),
       pc: 0,
       instructions: None,
-      state: VMStatus::Initializing,
+      state: VMStatus::Initializing { request_id: Uuid::new_v4() },
       overlayed_changeset: initial_change_set,
       supplied_data: HashMap::new(),
     }
@@ -237,13 +236,22 @@ impl VM {
         }
 
         let instruction = instructions[self.pc].clone();
-        let gas_cost = instruction::get_instruction_gas_cost(&instruction);
 
-        if self.overlayed_changeset.gas_remaining < U256::from(gas_cost) {
-          return Err("Out of gas".to_string());
-        }
+        // only pay for gas if vm is running,
+        // otherwise the gas is already deducted
+        match self.state {
+          VMStatus::Running => {
+            let gas_cost = instruction::get_instruction_gas_cost(&instruction);
 
-        self.overlayed_changeset.gas_remaining -= U256::from(gas_cost);
+            if self.overlayed_changeset.gas_remaining < U256::from(gas_cost) {
+              return Err("Out of gas".to_string());
+            }
+
+            self.overlayed_changeset.gas_used += U256::from(gas_cost);
+            self.overlayed_changeset.gas_remaining -= U256::from(gas_cost);
+          }
+          _ => {}
+        };
 
         match self.execute_instruction(&instruction) {
           Ok(event) => {
@@ -580,28 +588,56 @@ impl VM {
       
       // call/message operations
       Instruction::Call { address, gas_limit, amount, payload } => {
+        println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
+
+        match &self.state {
+          VMStatus::ReceivedData { request_id } => {
+            match self.supplied_data.get(request_id) {
+              Some(data) => {
+                self.pc += 1;
+                println!("[VM] CONTRACT CALL FINISHED: {}", data);
+                Ok(None)
+              }
+              None => {
+                Ok(Some(
+                    VMEvent::SpawnVM(
+                      Transaction {
+                        hash: "hash".to_string(),
+                        sender: self.transaction.receiver.clone(),
+                        receiver: address.clone().to_string(),
+                        amount: *amount,
+                        gas_limit: *gas_limit,
+                        gas_price: self.transaction.gas_price,
+                        nonce: U256::from(0 as u64),
+                        payload: payload.clone(),
+                        signature: "signature".to_string(),
+                      })))
+              }
+            }
+          }
+          _ => {
+            Ok(Some(
+                VMEvent::SpawnVM(
+                  Transaction {
+                    hash: "hash".to_string(),
+                    sender: self.transaction.receiver.clone(),
+                    receiver: address.clone().to_string(),
+                    amount: *amount,
+                    gas_limit: *gas_limit,
+                    gas_price: self.transaction.gas_price,
+                    nonce: U256::from(0 as u64),
+                    payload: payload.clone(),
+                    signature: "signature".to_string(),
+                  })))
+          }
+        }
+
         // let mut call_changeset = 
         //   self.execute_contract(address.to_string(), *gas_limit, *amount, payload.clone())?;
 
         // self.internal_transactions.append(&mut call_changeset.internal_transactions);
         // self.events.append(&mut call_changeset.events);
         // self.gas_remaining -= call_changeset.gas_used;
-
-        println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
-        self.pc += 1;
-        Ok(Some(
-            VMEvent::SpawnVM(
-              Transaction {
-                hash: "hash".to_string(),
-                sender: self.transaction.receiver.clone(),
-                receiver: address.clone().to_string(),
-                amount: *amount,
-                gas_limit: *gas_limit,
-                gas_price: self.transaction.gas_price,
-                nonce: U256::from(0 as u64),
-                payload: payload.clone(),
-                signature: "signature".to_string(),
-              })))
       }
       Instruction::Transaction { receiver, amount } => {
         println!("[VM] INTERNAL_TRANSACTION:\nto: {}\namount: {}", receiver, amount);
