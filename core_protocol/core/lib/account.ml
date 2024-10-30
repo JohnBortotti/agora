@@ -102,12 +102,6 @@ module Account = struct
       (* contract creation *)
       if tx.receiver = "0" then 
         begin
-          (* TODO: 
-            - run vm and execute the contract_init()
-            - the resulting opcode is stored at contract_state db (code_hash, program)
-            - update the account with code_hash (hashed program)
-            - store the storage_root on contract_state db (hash the trie root)
-          *)
           let contract_address = to_hex (digest_string
             (RLP.encode(`List[`String tx.sender; `String (string_of_int tx.nonce)]))
           ) in
@@ -185,15 +179,7 @@ module Account = struct
             let vm_res = vm_fun tx in
             Printf.printf "[Ocaml tx_apply] VM finished execution: \n %s \n\n" vm_res;
 
-            (* TODO: 
-              - decode vm_res to json
-              - handle VM return data on receipt 
-                - [x] gas used on receipt
-                - [x] events 
-                - [x] refund remaining gas
-                - [x] make internal_transactions
-                - [ ] bloom filter
-            *)
+            (* TODO: bloom filter *)
 
             (* generating receipt and emmited events *)
             let vm_res_json = Yojson.Basic.from_string vm_res in

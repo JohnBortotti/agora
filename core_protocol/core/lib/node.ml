@@ -1,11 +1,3 @@
-(*
-TODO:
-  - [ ] fixes
-    - [ ] optimize block broadcasting (a lot of repeated requests)
-    - [ ] singleton Secp256k1 context
-    - [ ] gossip protocol
- *)
-
 open Transaction
 open State
 open Lwt.Syntax

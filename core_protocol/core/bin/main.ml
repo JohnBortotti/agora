@@ -1,10 +1,16 @@
 (*
 TODO:
-  - [ ] JsonRPC (batch requests) ???
   - [ ] agora lang compiler
   - [ ] logs
-    - [ ] node
-    - [ ] VM
+  - [ ] contracts
+    - [ ] call functions "ABI"
+    - [ ] persistent storage
+    - [ ] bloom filter to track events
+  - [ ] node
+    - [ ] endpoint to get events
+    - [ ] fixes
+      - [ ] optimize block broadcasting (get rid of cyclical requests)
+      - [ ] singleton secp256k1 context
  *)
 
 open Agora_core.Node

@@ -1,8 +1,6 @@
 open Ctypes
 open Foreign
 
-(* TODO: please doc the VM architecture *)
-
 let target_path = Sys.getenv "VM_LIB_PATH" 
 let rust_lib = Dl.dlopen ~filename:target_path ~flags:[Dl.RTLD_NOW]
 
