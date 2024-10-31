@@ -149,7 +149,7 @@ let calculate_difficulty (prev_block: t) =
 let validate_block_transactions block = 
   match block.transactions with
   | [] -> 
-    print_endline "block doesnt have coinbase transaction";
+    print_endline "[NODE] block doesnt have coinbase transaction";
     false
   | coinbase :: rest ->
     if Transaction.validate_transaction_coinbase coinbase then
@@ -165,7 +165,7 @@ let validate_block_transactions block =
         aux rest
       end
     else 
-      (print_endline "invalid coinbase transaction";
+      (print_endline "[NODE] invalid coinbase transaction";
       false)
 
 let validate_block block prev_block =

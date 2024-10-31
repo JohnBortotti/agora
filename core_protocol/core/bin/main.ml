@@ -1,7 +1,6 @@
 (*
 TODO:
   - [ ] agora lang compiler
-  - [ ] logs
   - [ ] contracts
     - [ ] call functions "ABI"
     - [ ] persistent storage
@@ -35,7 +34,7 @@ let () =
   | None -> failwith "env var 'KNOWN_PEERS' not found")
   in
 
-  print_endline "\nrunning node...\n";
+  print_endline "[NODE] running node...";
 
   let node = new_node node_addr miner_addr_env known_peers_env in
   run_node node;

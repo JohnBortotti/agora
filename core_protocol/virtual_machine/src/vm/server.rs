@@ -17,7 +17,7 @@ pub struct Server {
 
 impl Server {
   pub fn new() -> Self {
-    println!("\n[VM] spawning VM server\n");
+    println!("[VM] spawning VM server");
     Self {
       root_vm_id: None,
       vms: HashMap::new(),
@@ -39,7 +39,8 @@ impl Server {
            
       let mut vms_to_delete: Vec<Uuid> = Vec::new();
 
-      println!("[VM] polling vm: {} {:?}", last_vm.get_id(), last_vm.poll());
+      // println!("[VM] polling vm: {}", last_vm.get_id());
+      // println!("[VM] polling vm: {} - state {:?}", last_vm.get_id(), last_vm.poll());
 
       match last_vm.poll() {
         VMStatus::Initializing { request_id } => {
@@ -65,13 +66,13 @@ impl Server {
             VMEvent::SpawnVM(tx) => {
               match self.vms.get(&request_id) {
                 Some(_) => {
-                  println!("[VM] vm is executing, data not available to send yet");
+                  // println!("[VM] vm is executing, data not available to send yet");
                 },
                 None => {
-                  println!("[VM] vm is not running, looking on vms_results");
+                  // println!("[VM] vm is not running, looking on vms_results");
                   match self.vms_results.get(&request_id) {
                     Some(change_set) => {
-                      println!("[VM] vm found on vms_results, sending data");
+                      // println!("[VM] vm found on vms_results, sending data");
                       let serialized_change_set = serde_json::to_string(&change_set).unwrap();
 
                       let last_vm_id = self.ordered_vms.last().unwrap();
@@ -80,7 +81,7 @@ impl Server {
                       last_vm.supply_data(request_id, serialized_change_set);
                     },
                     None => {
-                      println!("[VM] vm not found on vms_results, spawning vm");
+                      // println!("[VM] vm not found on vms_results, spawning vm");
                       self.spawn_vm(request_id, tx);
                     }
                   }
@@ -90,7 +91,7 @@ impl Server {
             VMEvent::RequestData(json_req) => {
               match self.data_requests.get(&request_id) {
                 Some(..) => {
-                  println!("[VM] data already requested, waiting for response");
+                  // println!("[VM] data already requested, waiting for response");
                 },
                 None => {
                   self.data_requests.insert(request_id, last_vm.get_id());
@@ -116,7 +117,7 @@ impl Server {
                 }
               }
             } else {
-              println!("[VM] VM finished, inserting vm_id: {}", last_vm.get_id());
+              // println!("[VM] VM finished, inserting vm_id: {}", last_vm.get_id());
               self.vms_results.insert(last_vm.get_id(), change_set);
               vms_to_delete.push(last_vm.get_id());
             }
@@ -141,7 +142,7 @@ impl Server {
   }
 
   pub fn send_data_to_vm(&mut self, request_id: Uuid, json: String) {
-    println!("[send_data_to_vm] Received data, request_id: {}", request_id);
+    println!("[VM] received data, request_id: {}", request_id);
     match self.data_requests.get(&request_id) {
       Some(vm_id) => {
         self.vms.get_mut(vm_id).unwrap().supply_data(request_id, json);

@@ -388,7 +388,7 @@ module State = struct
     let key_hex = hex_of_bytes key_bytes in
     match Database.get state.db key_hex with
     | None ->
-        Printf.printf "Key not found in the database: %s\n" key;
+        Printf.printf "Key not found in the database: %s" key;
         None
     | Some value_hex ->
         (try
@@ -397,7 +397,7 @@ module State = struct
            Some rlp_value
          with
          | Failure msg -> 
-             Printf.printf "Error during conversion or RLP decoding: %s\n" msg; 
+             Printf.printf "Error during conversion or RLP decoding: %s" msg; 
              None)
 
   let nibbles_from_db_str s =
@@ -441,12 +441,12 @@ module State = struct
           | _ -> failwith "Invalid RLP structure for branch node"
         in
         Some (Branch (children, value_opt))
-    | _ -> print_endline "Invalid RLP structure:"; None
+    | _ -> print_endline "[NODE] Invalid RLP structure:"; None
     in
     let rebuild_trie_from_root key =
       match get_from_db state key with
       | None -> 
-          print_endline ("Node with key " ^ key ^ " not found in the database.\n"); 
+          print_endline ("[NODE] Node with key " ^ key ^ " not found in the database."); 
           state
       | Some serialized_node ->
           let trie = rebuild_trie state (serialized_node) in
@@ -454,12 +454,12 @@ module State = struct
     in
     if hash <> "0" then
       begin
-        print_endline ("reverting to state with hash " ^ hash ^ "\n");
+        print_endline ("[NODE] reverting to state with hash " ^ hash);
         let restored_state = rebuild_trie_from_root hash in
         restored_state
       end
     else
-      (print_endline "reverting state to genesis block\n";
+      (print_endline "[NODE] reverting state to genesis block";
       { state with trie=None })
  
   let init_state db_path mem_size =

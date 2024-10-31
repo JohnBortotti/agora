@@ -140,7 +140,7 @@ module Account = struct
                 MKPTrie.insert storage_trie code_hash (`String tx.payload)
               in
 
-              Printf.printf "contract created: %s\n" contract_address;
+              Printf.printf "[NODE] contract created: %s\n" contract_address;
 
               (* storing the receipt on receipt_state *)
               let receipt = {
@@ -177,7 +177,7 @@ module Account = struct
           (* contract execution *)
           if receiver_account.code_hash <> "" then begin
             let vm_res = vm_fun tx in
-            Printf.printf "[Ocaml tx_apply] VM finished execution: \n %s \n\n" vm_res;
+            Printf.printf "[NODE] VM finished execution: \n %s \n\n" vm_res;
 
             (* TODO: bloom filter *)
 

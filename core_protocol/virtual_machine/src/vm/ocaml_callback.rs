@@ -9,7 +9,7 @@ pub struct RealOcamlCallback;
 
 impl OcamlCallback for RealOcamlCallback {
   fn call(&self, request_id: &str, json: &str) {
-    println!("[RealOcamlCallback] request_id: {} json: {}", request_id, json);
+    // println!("[VM] requesting data - request_id: {} json: {}", request_id, json);
 
     let request_id_cstring = 
         CString::new(request_id).expect("Failed to create CString for request_id");
@@ -36,6 +36,6 @@ pub struct MockOcamlCallback;
 
 impl OcamlCallback for MockOcamlCallback {
   fn call(&self, request_id: &str, json: &str) {
-    println!("[MockOcamlCallback] request_id: {} json: {}", request_id, json);
+    println!("[VM] request_id: {} json: {}", request_id, json);
   }
 }

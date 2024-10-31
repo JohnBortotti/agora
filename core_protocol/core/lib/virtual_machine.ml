@@ -52,7 +52,6 @@ module VM = struct
   let destroy vm_server =
     if not (is_null vm_server.server) then (
       ffi_destroy_vm_server vm_server.server;
-      Printf.printf "VM server destroyed successfully.\n";
     )
 
   (* TODO: change ocaml integers to U256 *)

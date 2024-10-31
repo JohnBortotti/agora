@@ -119,7 +119,7 @@ impl VMStateMachine for VM {
         match self.supplied_data.get(request_id) {
           Some(data) => {
             let res = deserialize_response(data).unwrap().result.unwrap()["code"].take();
-            println!("[VM] Data found: {}", res);
+            // println!("[VM] Data found: {}", res);
             let instructions = Self::decode_program(res.to_string().as_str()).unwrap();
             self.instructions = Some(instructions);
             self.state = VMStatus::Running;
@@ -166,7 +166,7 @@ impl VMStateMachine for VM {
   }
 
   fn supply_data(&mut self, request_id: Uuid, data: String) {
-    println!("[VM] Data supplied, id: {}", request_id);
+    // println!("[VM] Data supplied, id: {}", request_id);
     self.supplied_data.insert(request_id, data);
 
     match self.state {
@@ -295,13 +295,13 @@ impl VM {
         // stack operation
         Instruction::Push { value } => {
           self.stack.push(*value);
-          println!("[VM] PUSH {}", value);
+          // println!("[VM] PUSH {}", value);
           self.pc += 1;
           Ok(None)
         }
         Instruction::Pop => {
           if let Some(value) = self.stack.pop() {
-            println!("[VM] POP {}", value);
+            // println!("[VM] POP {}", value);
             self.pc += 1;
             Ok(None)
           } else {
@@ -314,7 +314,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = a + b;
             self.stack.push(result);
-            println!("[VM] ADD {} + {} = {}", b, a, result);
+            // println!("[VM] ADD {} + {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -325,7 +325,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = b - a;
             self.stack.push(result);
-            println!("[VM] SUB {} - {} = {}", b, a, result);
+            // println!("[VM] SUB {} - {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -336,7 +336,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = a * b;
             self.stack.push(result);
-            println!("[VM] MUL {} * {} = {}", b, a, result);
+            // println!("[VM] MUL {} * {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -346,13 +346,13 @@ impl VM {
         Instruction::Div => {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             if a == 0 {
-              println!("[VM] DIV failed: division by zero");
+              // println!("[VM] DIV failed: division by zero");
               self.stack.push(U256::from(0 as u64));
               Err("[VM] DIV failed: division by zero".to_string())
             } else {
               let result = b / a;
               self.stack.push(result);
-              println!("[VM] DIV {} / {} = {}", b, a, result);
+              // println!("[VM] DIV {} / {} = {}", b, a, result);
               self.pc += 1;
               Ok(None)
             }
@@ -369,7 +369,7 @@ impl VM {
             } else {
               let result = b % a;
               self.stack.push(result);
-              println!("[VM] MOD {} % {} = {}", b, a, result);
+              // println!("[VM] MOD {} % {} = {}", b, a, result);
               self.pc += 1;
               Ok(None)
             }
@@ -383,7 +383,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = if a == b { 1 as u64 } else { 0 as u64 };
             self.stack.push(result.into());
-            println!("[VM] EQ {} == {} = {}", b, a, result);
+            // println!("[VM] EQ {} == {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -394,7 +394,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = if a != b { 1 as u64 } else { 0 as u64 };
             self.stack.push(result.into());
-            println!("[VM] NE {} != {} = {}", b, a, result);
+            // println!("[VM] NE {} != {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -405,7 +405,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = if b < a { 1 as u64 } else { 0 as u64 };
             self.stack.push(result.into());
-            println!("[VM] LT {} < {} = {}", b, a, result);
+            // println!("[VM] LT {} < {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -416,7 +416,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = if b > a { 1 } else { 0 };
             self.stack.push(U256::from(result as u64));
-            println!("[VM] GT {} > {} = {}", b, a, result);
+            // println!("[VM] GT {} > {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -427,7 +427,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = if b <= a { 1 } else { 0 };
             self.stack.push(U256::from(result as u64));
-            println!("[VM] LE {} <= {} = {}", b, a, result);
+            // println!("[VM] LE {} <= {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -438,7 +438,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = if b >= a { 1 } else { 0 };
             self.stack.push(U256::from(result as u64));
-            println!("[VM] GE {} >= {} = {}", b, a, result);
+            // println!("[VM] GE {} >= {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -449,7 +449,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = a & b;
             self.stack.push(result);
-            println!("[VM] AND {} & {} = {}", b, a, result);
+            // println!("[VM] AND {} & {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -460,7 +460,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = a | b;
             self.stack.push(result);
-            println!("[VM] OR {} | {} = {}", b, a, result);
+            // println!("[VM] OR {} | {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -473,7 +473,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = a & b;
             self.stack.push(result);
-            println!("[VM] AND {} & {} = {}", b, a, result);
+            // println!("[VM] AND {} & {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -484,7 +484,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = a | b;
             self.stack.push(result);
-            println!("[VM] OR {} | {} = {}", b, a, result);
+            // println!("[VM] OR {} | {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -495,7 +495,7 @@ impl VM {
           if let (Some(a), Some(b)) = (self.stack.pop(), self.stack.pop()) {
             let result = a ^ b;
             self.stack.push(result);
-            println!("[VM] XOR {} ^ {} = {}", b, a, result);
+            // println!("[VM] XOR {} ^ {} = {}", b, a, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -506,7 +506,7 @@ impl VM {
           if let Some(a) = self.stack.pop() {
             let result = !a;
             self.stack.push(result);
-            println!("[VM] NOT !{}", a);
+            // println!("[VM] NOT !{}", a);
             self.pc += 1;
             Ok(None)
           } else {
@@ -517,7 +517,7 @@ impl VM {
           if let Some(a) = self.stack.pop() {
             let result = a << shift;
             self.stack.push(result);
-            println!("[VM] SHL {} << {} = {}", a, shift, result);
+            // println!("[VM] SHL {} << {} = {}", a, shift, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -528,7 +528,7 @@ impl VM {
           if let Some(a) = self.stack.pop() {
             let result = a >> shift;
             self.stack.push(result);
-            println!("[VM] SHR {} >> {} = {}", a, shift, result);
+            // println!("[VM] SHR {} >> {} = {}", a, shift, result);
             self.pc += 1;
             Ok(None)
           } else {
@@ -540,7 +540,7 @@ impl VM {
         Instruction::Set { key } => {
           if let Some(value) = self.stack.pop() {
             self.storage.insert(key.clone(), value);
-            println!("[VM] SET {} = {}", key, value);
+            // println!("[VM] SET {} = {}", key, value);
             self.pc += 1;
             Ok(None)
           } else {
@@ -550,7 +550,7 @@ impl VM {
         Instruction::Get { key } => {
           if let Some(value) = self.storage.get(key) {
             self.stack.push(*value);
-            println!("[VM] GET {} = {}", key, value);
+            // println!("[VM] GET {} = {}", key, value);
             self.pc += 1;
             Ok(None)
           } else {
@@ -560,14 +560,14 @@ impl VM {
 
         // control flow operations
         Instruction::Jump { destination } => {
-          println!("[VM] JUMP {}", destination);
+          // println!("[VM] JUMP {}", destination);
           self.pc = *destination;
           Ok(None)
         }
         Instruction::JumpIf { destination } => {
           if let Some(condition) = self.stack.pop() {
             if condition != 0 {
-              println!("[VM] JUMPIF {}", destination);
+              // println!("[VM] JUMPIF {}", destination);
               self.pc = *destination;
             } else {
               self.pc += 1;
@@ -578,13 +578,13 @@ impl VM {
           }
         }
         Instruction::Halt { message } => {
-          println!("[VM] HALT");
+          // println!("[VM] HALT");
           Err(message.to_string())
         }
 
         // call/message operations
         Instruction::Call { address, gas_limit, amount, payload } => {
-          println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
+          // println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
 
           match &self.state {
             VMStatus::ReceivedData { request_id } => {
@@ -593,7 +593,7 @@ impl VM {
                   let result_overlay: OverlayedChangeSet = serde_json::from_str(data).unwrap();
                   self.pc += 1;
                   self.state = VMStatus::Running;
-                  println!("[VM] CONTRACT CALL FINISHED: {}", data);
+                  // println!("[VM] CONTRACT CALL FINISHED: {}", data);
                   self.overlayed_changeset.events
                     .append(&mut result_overlay.events.clone());
                   self.overlayed_changeset.internal_transactions
@@ -637,7 +637,7 @@ impl VM {
           }
         }
         Instruction::Transaction { receiver, amount } => {
-          println!("[VM] TRANSACTION {} {}", receiver, amount);
+          // println!("[VM] TRANSACTION {} {}", receiver, amount);
 
           match self.state {
             VMStatus::ReceivedData { request_id } => {
@@ -686,13 +686,13 @@ impl VM {
           }
         }
         Instruction::Emit { event_name, data, topic1, topic2, topic3 } => {
-          println!("[VM] EMIT: \n
-                 name: {}\n
-                 topic1: {}\n
-                 topic2\n {}\n
-                 topic3:{}\n
-                 data: {:?}",
-                 event_name, topic1, topic2, topic3, data);
+          // println!("[VM] EMIT: \n
+          //        name: {}\n
+          //        topic1: {}\n
+          //        topic2\n {}\n
+          //        topic3:{}\n
+          //        data: {:?}",
+          //        event_name, topic1, topic2, topic3, data);
 
           self.overlayed_changeset.events.push(Event {
             name: event_name.clone(),
@@ -704,7 +704,7 @@ impl VM {
           Ok(None)
         }
         Instruction::Return => {
-          println!("[VM] RETURN");
+          // println!("[VM] RETURN");
           self.state = VMStatus::Finished {
             change_set: self.overlayed_changeset.clone()
           };
@@ -713,34 +713,34 @@ impl VM {
 
         // environment operations
         Instruction::GetBalance { address } => {
-          println!("[VM] GETBALANCE {}", address);
+          // println!("[VM] GETBALANCE {}", address);
           self.pc += 1;
           Ok(None)
         }
         Instruction::GetCaller => {
-          println!("[VM] GETCALLER");
+          // println!("[VM] GETCALLER");
           self.pc += 1;
           Ok(None)
         }
         Instruction::GetCallValue => {
-          println!("[VM] GETCALLVALUE");
+          // println!("[VM] GETCALLVALUE");
           self.stack.push(self.transaction.amount);
           self.pc += 1;
           Ok(None)
         }
         Instruction::GetGasPrice => {
-          println!("[VM] GETGASPRICE");
+          // println!("[VM] GETGASPRICE");
           self.stack.push(self.transaction.gas_price);
           self.pc += 1;
           Ok(None)
         }
         Instruction::GetBlockNumber => {
-          println!("[VM] GETBLOCKNUMBER");
+          // println!("[VM] GETBLOCKNUMBER");
           self.pc += 1;
           Ok(None)
         }
         Instruction::GetBlockTimestamp => {
-          println!("[VM] GETBLOCKTIMESTAMP");
+          // println!("[VM] GETBLOCKTIMESTAMP");
           self.pc += 1;
           Ok(None)
         }

@@ -184,7 +184,7 @@ module Features = struct
 
     if received_block.index > prev_block.index + 1 then
       begin
-        print_endline "receiving longer chain\n";
+        print_endline "[NODE] receiving longer chain";
 
         let start_idx = max 0 (prev_block.index - 10) in
         let end_idx = received_block.index in
@@ -199,7 +199,7 @@ module Features = struct
         let uri = Uri.of_string (peer_addr ^ "/") in
         let headers = Cohttp.Header.init_with "Content-Type" "application/json" in
 
-        Printf.printf "getting headers: %d to %d\n\n" end_idx start_idx; 
+        Printf.printf "[NODE] getting headers: %d to %d\n" end_idx start_idx; 
 
         let* _, body = Cohttp_lwt_unix.Client.post
             ~headers
@@ -233,10 +233,10 @@ module Features = struct
             let last_common_block = find_last_common_block curr_chain peer_headers in
             (match last_common_block with
             | None ->
-              Printf.printf "no common block found with the peer chain, rejecting the block.";
+              Printf.printf "[NODE] no common block found on peer chain, rejecting the block.\n";
               Lwt.return_false
             | Some common_block ->
-              Printf.printf "common block found index: %d\n\n" common_block.index;
+              Printf.printf "[NODE] common block found index: %d\n" common_block.index;
 
               let start_idx = common_block.index + 1 in
               let end_idx = received_block.index in
@@ -374,7 +374,7 @@ module Features = struct
       end
     else if Block.validate_block received_block prev_block then 
       try
-        print_endline "received block is valid\n";
+        print_endline "[NODE] received block is valid";
 
         let* () = Lwt_mutex.lock node.transaction_pool_mutex in
         let transaction_pool = !(node.transaction_pool) in
@@ -523,7 +523,7 @@ module Features = struct
       let candidate_hash = hash_block { candidate_block with hash = "" } in 
       if is_valid_pow candidate_hash difficulty then 
         begin
-          print_endline ("mined block: " ^ (string_of_int candidate_block.index) ^ "\n");
+          print_endline ("[NODE] mined block: " ^ (string_of_int candidate_block.index));
           Lwt.return (
             (updated_state_trie, updated_contract_trie, updated_receipt_trie),
             { candidate_block with hash = candidate_hash }
@@ -671,7 +671,7 @@ module Transport = struct
   open Cohttp
 
   let http_server node =
-    Lwt_io.printf "listening for Http connections at: %s\n" node.address >>= fun () ->
+    Lwt_io.printf "[NODE] listening for Http connections at: %s\n" node.address >>= fun () ->
     let cors_headers = Cohttp.Header.of_list [
       ("Access-Control-Allow-Origin", "*");
       ("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
