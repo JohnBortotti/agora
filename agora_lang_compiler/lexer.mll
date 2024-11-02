@@ -10,6 +10,9 @@ rule read = parse
   | ['0'-'9']+ as lxm { INT (int_of_string lxm) }
   | ['a'-'z' 'A'-'Z' '_']['a'-'z' 'A'-'Z' '0'-'9' '_']* as lxm { 
     match lxm with 
+    | "bool"  -> BOOL_TYPE
+    | "int"   -> INT_TYPE
+    | "string" -> STRING_TYPE
     | "false" -> BOOL false
     | "true"  -> BOOL true
     | "let"   -> LET
@@ -18,6 +21,7 @@ rule read = parse
     | "then"  -> THEN
     | "else"  -> ELSE
     | "var"   -> VAR
+    | "struct" -> STRUCT
     | _ -> IDENT lxm
   }
   | [' ' '\t' '\r' '\n']       { read lexbuf }
@@ -44,6 +48,8 @@ rule read = parse
   | '['                        { LBRACKET }
   | ']'                        { RBRACKET }
   | ';'                        { SEMICOLON }
+  | '{'                        { LBRACE }
+  | '}'                        { RBRACE }
   | ':'                        { COLON }
   | "->"                       { ARROW }
   | ['0'-'9']+ as i            { INT (int_of_string i) }

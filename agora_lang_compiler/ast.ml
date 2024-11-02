@@ -1,10 +1,17 @@
+type ty = 
+  | TBool
+  | TInt
+  | TString
+  | TArrow of ty * ty
+  | TVar of string
+
 type expr =
   | Int of int
   | Bool of bool
   | String of string
   | Var of string
-  | VarBind of string * expr
-  | Abs of string * expr list
+  | VarBind of string * ty * expr
+  | Abs of string * ty * expr list
   | App of expr * expr
   | If of expr * expr list * expr list
   | Let of string * expr * expr
@@ -12,6 +19,7 @@ type expr =
   | IndexAccess of expr * expr
   | Assign of expr * expr
   | List of expr list
+  | StructDef of string * (string * string) list
 
 and binop = Add | Sub | Mul | Div | Eq | Neq | Lt | Lte | Gt | Gte
 
@@ -29,15 +37,23 @@ let string_of_binop = function
   | Gt -> ">"
   | Gte -> ">="
 
+let rec string_of_ty = function
+  | TBool -> "bool"
+  | TInt -> "int"
+  | TString -> "string"
+  | TArrow (t1, t2) -> Printf.sprintf "(%s -> %s)" (string_of_ty t1) (string_of_ty t2)
+  | TVar x -> x
+
 let rec string_of_expr = function
   | Int i -> string_of_int i
   | Bool b -> string_of_bool b
   | String s -> Printf.sprintf "\"%s\"" s
   | Var x -> Printf.sprintf "Var (%s)" x
-  | VarBind (x, e) -> 
-      Printf.sprintf "VarBind (%s := %s)" x (string_of_expr e)
-  | Abs (x, body) -> 
-      Printf.sprintf "Abs (%s, [%s])" x (String.concat "; " (List.map string_of_expr body))
+  | VarBind (x, ty, e) -> 
+      Printf.sprintf "VarBind (%s: %s := %s)" x  (string_of_ty ty) (string_of_expr e)
+  | Abs (x, ty, body) ->
+      Printf.sprintf "Abs (%s: %s) -> [%s]" x 
+      (string_of_ty ty) (String.concat "; " (List.map string_of_expr body))
   | App (e1, e2) -> 
       Printf.sprintf "App (%s %s)" (string_of_expr e1) (string_of_expr e2)
   | Let (x, e1, e2) -> 
@@ -55,3 +71,5 @@ let rec string_of_expr = function
       Printf.sprintf "Assign (%s := %s)" (string_of_expr e1) (string_of_expr e2)
   | List l -> 
       Printf.sprintf "List ([%s])" (String.concat "; " (List.map string_of_expr l))
+  | StructDef (name, fields) -> 
+      Printf.sprintf "StructDef (%s, [%s])" name (String.concat "; " (List.map (fun (k, v) -> Printf.sprintf "%s: %s" k v) fields))

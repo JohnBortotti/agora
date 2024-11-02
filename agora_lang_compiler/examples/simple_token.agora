@@ -1,6 +1,6 @@
-var total_supply := 50;
+var total_supply: int := 50;
 
-let transfer = \from -> \to -> \amount ->
+let transfer = \from: string -> \to: string -> \amount: int ->
   let from_balance = get_balance from in
   let to_balance = get_balance to in
 
@@ -12,6 +12,6 @@ let transfer = \from -> \to -> \amount ->
     error "Insufficient funds"
 in
 
-let get_balance = \addr -> balances[addr] in
+let get_balance = \addr: string -> balances[addr] in
 
 publish ([transfer;get_balance])

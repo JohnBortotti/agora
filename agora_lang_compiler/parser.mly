@@ -10,14 +10,17 @@
 %token LPAREN RPAREN COMMA
 %token ARROW LAMBDA ASSIGN VAR
 %token EOF IF THEN ELSE SEMICOLON
-%token EQ NEQ LT LTE GT GTE COLON
+%token EQ NEQ LT LTE GT GTE COLON STRUCT
 %token LET IN UNDERSCORE RBRACKET LBRACKET
+%token LBRACE RBRACE
+%token BOOL_TYPE INT_TYPE STRING_TYPE
 
 %left PLUS MINUS
 %left TIMES DIVIDE
 
 %start main
 %type <Ast.program> main
+%type <Ast.ty> ty
 
 %%
 
@@ -28,12 +31,19 @@ expr_list:
   | expr SEMICOLON expr_list { $1 :: $3 }
   | expr { [$1] }
 
+struct_field_list:
+  | struct_field SEMICOLON struct_field_list { $1 :: $3 }
+  | struct_field SEMICOLON { [$1] }
+
+struct_field:
+  | IDENT COLON IDENT { ($1, $3) }
+
 expr:
   | e1 = expr e2 = term { App(e1, e2) }
   | IF e1 = expr THEN e2 = expr_list ELSE e3 = expr_list { If(e1, e2, e3) }
-  | VAR IDENT ASSIGN e1 = expr SEMICOLON { VarBind($2, e1) }
+  | STRUCT IDENT LBRACE struct_field_list RBRACE { StructDef($2, $4) }
   | LET IDENT EQ e1 = expr IN e2 = expr { Let($2, e1, e2) }
-  | VAR IDENT COLON EQ e1 = expr { VarBind($2, e1) }
+  | VAR IDENT COLON t = ty COLON EQ e1 = expr { VarBind($2, t, e1) }
   | LBRACKET expr_list RBRACKET { List($2) }
   | e1 = expr COLON EQ e2 = expr { Assign (e1, e2) }
   | e1 = expr PLUS e2 = expr { BinOp(Add, e1, e2) }
@@ -53,6 +63,12 @@ term:
   | INT { Int $1 }
   | BOOL { Bool $1 }
   | STRING { String $1 }
-  | LAMBDA IDENT ARROW expr_list { Abs ($2, $4) }
+  | LAMBDA IDENT COLON t = ty ARROW x = expr_list { Abs($2, t, x) }
   | LPAREN e = expr RPAREN { e }
   | IDENT LBRACKET expr RBRACKET { IndexAccess(Var $1, $3) }
+
+ty:
+  | LPAREN t1 = ty ARROW t2 = ty RPAREN { TArrow(t1, t2) }
+  | STRING_TYPE { TString }
+  | BOOL_TYPE { TBool }
+  | INT_TYPE { TInt }
