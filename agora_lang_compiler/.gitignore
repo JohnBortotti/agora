@@ -1,0 +1,15 @@
+*.cmo
+*.cmi
+*.cmx
+*.o
+
+main
+
+lexer.ml
+parser.ml
+parser.mli
+
+*~
+\#*#
+
+_build/

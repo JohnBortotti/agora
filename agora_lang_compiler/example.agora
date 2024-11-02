@@ -1,0 +1,17 @@
+var total_supply := 50;
+
+let transfer = \from -> \to -> \amount ->
+  let from_balance = get_balance from in
+  let to_balance = get_balance to in
+
+  if (from_balance >= amount) then 
+    balances[from] := from_balance - amount;
+    balances[from] := to_balance + amount;
+    emit 
+  else 
+    error "Insufficient funds"
+in
+
+let get_balance = \addr -> balances[addr] in
+
+publish ([transfer;get_balance])

@@ -1,8 +1,8 @@
 (*
 TODO:
   - [ ] agora lang compiler
+    - [ ] function dispatcher "ABI"
   - [ ] contracts
-    - [ ] call functions "ABI"
     - [ ] persistent storage
     - [ ] bloom filter to track events
   - [ ] node
