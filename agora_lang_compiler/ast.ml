@@ -9,7 +9,9 @@ type expr =
   | Int of int
   | Bool of bool
   | String of string
+  | Tuple of expr list
   | Var of string
+  | Mapping of string * ty * ty
   | VarBind of string * ty * expr
   | Abs of string * ty * expr list
   | App of expr * expr
@@ -19,7 +21,6 @@ type expr =
   | IndexAccess of expr * expr
   | Assign of expr * expr
   | List of expr list
-  | StructDef of string * (string * string) list
 
 and binop = Add | Sub | Mul | Div | Eq | Neq | Lt | Lte | Gt | Gte
 
@@ -48,7 +49,12 @@ let rec string_of_expr = function
   | Int i -> string_of_int i
   | Bool b -> string_of_bool b
   | String s -> Printf.sprintf "\"%s\"" s
+  | Tuple l ->  Printf.sprintf "Tuple (%s)" (String.concat "; " (List.map string_of_expr l))
   | Var x -> Printf.sprintf "Var (%s)" x
+  | Mapping (x, t1, t2) -> 
+      Printf.sprintf "Mapping (%s: (%s, %s))" x
+      (string_of_ty t1)
+      (string_of_ty t2)
   | VarBind (x, ty, e) -> 
       Printf.sprintf "VarBind (%s: %s := %s)" x  (string_of_ty ty) (string_of_expr e)
   | Abs (x, ty, body) ->
@@ -71,5 +77,3 @@ let rec string_of_expr = function
       Printf.sprintf "Assign (%s := %s)" (string_of_expr e1) (string_of_expr e2)
   | List l -> 
       Printf.sprintf "List ([%s])" (String.concat "; " (List.map string_of_expr l))
-  | StructDef (name, fields) -> 
-      Printf.sprintf "StructDef (%s, [%s])" name (String.concat "; " (List.map (fun (k, v) -> Printf.sprintf "%s: %s" k v) fields))

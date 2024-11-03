@@ -12,7 +12,7 @@
 %token EOF IF THEN ELSE SEMICOLON
 %token EQ NEQ LT LTE GT GTE COLON STRUCT
 %token LET IN UNDERSCORE RBRACKET LBRACKET
-%token LBRACE RBRACE
+%token LBRACE RBRACE MAPPING
 %token BOOL_TYPE INT_TYPE STRING_TYPE
 
 %left PLUS MINUS
@@ -31,20 +31,18 @@ expr_list:
   | expr SEMICOLON expr_list { $1 :: $3 }
   | expr { [$1] }
 
-struct_field_list:
-  | struct_field SEMICOLON struct_field_list { $1 :: $3 }
-  | struct_field SEMICOLON { [$1] }
-
-struct_field:
-  | IDENT COLON IDENT { ($1, $3) }
+tuple_elements:
+  | expr COMMA tuple_elements { $1 :: $3 }
+  | expr { [$1] }
 
 expr:
   | e1 = expr e2 = term { App(e1, e2) }
   | IF e1 = expr THEN e2 = expr_list ELSE e3 = expr_list { If(e1, e2, e3) }
-  | STRUCT IDENT LBRACE struct_field_list RBRACE { StructDef($2, $4) }
   | LET IDENT EQ e1 = expr IN e2 = expr { Let($2, e1, e2) }
   | VAR IDENT COLON t = ty COLON EQ e1 = expr { VarBind($2, t, e1) }
+  | MAPPING LPAREN t1 = ty COMMA t2 = ty RPAREN IDENT  { Mapping($7, t1, t2) }
   | LBRACKET expr_list RBRACKET { List($2) }
+  | LPAREN tuple_elements RPAREN { Tuple($2) }
   | e1 = expr COLON EQ e2 = expr { Assign (e1, e2) }
   | e1 = expr PLUS e2 = expr { BinOp(Add, e1, e2) }
   | e1 = expr MINUS e2 = expr { BinOp(Sub, e1, e2) }

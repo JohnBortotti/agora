@@ -1,0 +1,28 @@
+(* persistent mutable variables *)
+var total_supply: int := 50;
+var last_emitted: string := "none";
+
+(* persistent mutable mappings *)
+mapping (string, int) balances;
+
+(* functions *)
+let create_user_tuple = \x: string -> \y: int -> (x, y) in
+
+let get_balance = \addr: string -> balances[addr] in
+
+let sum = \x: int -> \y: int -> x + y in
+
+let transfer = \from: string -> \to: string -> \amount: int ->
+  let from_balance = get_balance from in
+  let to_balance = get_balance to in
+  if (from_balance >= amount) then 
+    balances[from] := from_balance - amount;
+    balances[to] := to_balance + amount;
+    last_emitted := "transfer";
+    emit
+  else 
+    error "Insufficient funds"
+in
+
+(* publish the functions *)
+publish ([transfer;get_balance])
