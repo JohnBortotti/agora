@@ -12,8 +12,8 @@
 %token EOF IF THEN ELSE SEMICOLON
 %token EQ NEQ LT LTE GT GTE COLON STRUCT
 %token LET IN UNDERSCORE RBRACKET LBRACKET
-%token LBRACE RBRACE MAPPING FN
-%token BOOL_TYPE INT_TYPE STRING_TYPE
+%token LBRACE RBRACE MAPPING FN LIST_TYPE DOT
+%token BOOL_TYPE INT_TYPE STRING_TYPE TUPLE_TYPE
 
 %left PLUS MINUS
 %left TIMES DIVIDE
@@ -31,8 +31,16 @@ expr_list:
   | expr SEMICOLON expr_list { $1 :: $3 }
   | expr { [$1] }
 
+tuple_type:
+  | ty COMMA tuple_type { $1 :: $3 }
+  | ty COMMA ty { [$1; $3] }
+
 tuple_elements:
   | expr COMMA tuple_elements { $1 :: $3 }
+  | expr { [$1] }
+
+list_elements:
+  | expr SEMICOLON list_elements { $1 :: $3 }
   | expr { [$1] }
 
 expr:
@@ -44,6 +52,7 @@ expr:
   | MAPPING LPAREN t1 = ty COMMA t2 = ty RPAREN IDENT  { Mapping($7, t1, t2) }
   | LBRACKET expr_list RBRACKET { List($2) }
   | LPAREN tuple_elements RPAREN { Tuple($2) }
+  | LBRACKET list_elements RBRACKET { List($2) }
   | e1 = expr COLON EQ e2 = expr { Assign (e1, e2) }
   | e1 = expr PLUS e2 = expr { BinOp(Add, e1, e2) }
   | e1 = expr MINUS e2 = expr { BinOp(Sub, e1, e2) }
@@ -65,9 +74,12 @@ term:
   | LAMBDA IDENT COLON t = ty ARROW x = expr_list { Abs($2, t, x) }
   | LPAREN e = expr RPAREN { e }
   | IDENT LBRACKET expr RBRACKET { IndexAccess(Var $1, $3) }
+  | IDENT DOT expr { TupleAccess(Var $1, $3) }
 
 ty:
   | LPAREN t1 = ty ARROW t2 = ty RPAREN { TArrow(t1, t2) }
+  | LPAREN t = tuple_type RPAREN TUPLE_TYPE { TTuple(t) }
   | STRING_TYPE { TString }
   | BOOL_TYPE { TBool }
   | INT_TYPE { TInt }
+  | t = ty LIST_TYPE { TList t }

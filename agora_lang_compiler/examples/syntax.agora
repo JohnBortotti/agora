@@ -14,20 +14,12 @@ let get_balance = {
  \addr: string -> balances[addr]
 };
 
-let publish = {
-  \x : string -> 2
+let get_user_name = {
+  \user: (string, int) tuple -> user.0
 };
 
-let emit = {
-  \x : string -> x
-};
-
-let error = {
- \x : string -> x
-}; 
-
-let get_balance = {
-  \addr: string -> balances[addr]
+let get_item = {
+  \l: int list -> \nth: int -> l[nth]
 };
 
 let update_balance = {
@@ -55,4 +47,5 @@ let transfer = {
 };
 
 (* publish the functions *)
-publish "test"
+publish (["transfer"]);
+view (["get_balance"])

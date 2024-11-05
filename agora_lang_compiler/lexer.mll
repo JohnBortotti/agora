@@ -13,6 +13,8 @@ rule read = parse
     | "bool"    -> BOOL_TYPE
     | "int"     -> INT_TYPE
     | "string"  -> STRING_TYPE
+    | "list"    -> LIST_TYPE
+    | "tuple"   -> TUPLE_TYPE
     | "false"   -> BOOL false
     | "true"    -> BOOL true
     | "let"     -> LET
@@ -51,6 +53,7 @@ rule read = parse
   | '{'                        { LBRACE }
   | '}'                        { RBRACE }
   | ':'                        { COLON }
+  | '.'                        { DOT }
   | "->"                       { ARROW }
   | ['0'-'9']+ as i            { INT (int_of_string i) }
   | eof                        { EOF }

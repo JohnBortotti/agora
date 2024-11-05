@@ -5,6 +5,7 @@ type ty =
   | TString
   | TArrow of ty * ty
   | TMapping of ty * ty
+  | TList of ty
   | TTuple of ty list
 
 type expr =
@@ -12,6 +13,7 @@ type expr =
   | Bool of bool
   | String of string
   | Tuple of expr list
+  | List of expr list
   | Var of string
   | Mapping of string * ty * ty
   | VarBind of string * ty * expr
@@ -22,8 +24,8 @@ type expr =
   | Let_brace of string * expr list
   | BinOp of binop * expr * expr
   | IndexAccess of expr * expr
+  | TupleAccess of expr * expr
   | Assign of expr * expr
-  | List of expr list
 
 and binop = Add | Sub | Mul | Div | Eq | Neq | Lt | Lte | Gt | Gte
 
@@ -49,12 +51,14 @@ let rec string_of_ty = function
   | TArrow (t1, t2) -> Printf.sprintf "abs (%s -> %s)" (string_of_ty t1) (string_of_ty t2)
   | TMapping (t1, t2) -> Printf.sprintf "mapping(%s, %s)" (string_of_ty t1) (string_of_ty t2)
   | TTuple l -> Printf.sprintf "tuple (%s)" (String.concat ", " (List.map string_of_ty l))
+  | TList t -> Printf.sprintf "list (%s)" (string_of_ty t)
 
 let rec string_of_expr = function
   | Int i -> string_of_int i
   | Bool b -> string_of_bool b
   | String s -> Printf.sprintf "\"%s\"" s
   | Tuple l ->  Printf.sprintf "Tuple (%s)" (String.concat "; " (List.map string_of_expr l))
+  | List l ->  Printf.sprintf "List [%s]" (String.concat "; " (List.map string_of_expr l))
   | Var x -> Printf.sprintf "Var (%s)" x
   | Mapping (x, t1, t2) -> 
       Printf.sprintf "Mapping (%s: (%s, %s))" x
@@ -80,10 +84,10 @@ let rec string_of_expr = function
       Printf.sprintf "BinOp (%s %s %s)" (string_of_expr e1) (string_of_binop op) (string_of_expr e2)
   | IndexAccess (e1, e2) -> 
       Printf.sprintf "IndexAccess (%s[%s])" (string_of_expr e1) (string_of_expr e2)
+  | TupleAccess (e1, e2) -> 
+      Printf.sprintf "TupleAccess (%s.%s)" (string_of_expr e1) (string_of_expr e2)
   | Assign (e1, e2) -> 
       Printf.sprintf "Assign (%s := %s)" (string_of_expr e1) (string_of_expr e2)
-  | List l -> 
-      Printf.sprintf "List ([%s])" (String.concat "; " (List.map string_of_expr l))
 
 type type_env = (string, ty) Hashtbl.t
 
@@ -155,19 +159,106 @@ let rec check_type_expr (env: type_env) (expr: expr) : ty =
            check_type TInt t2;
            TBool)
   | IndexAccess (e1, e2) -> 
-      let mapping_type = check_type_expr env e1 in
+      let expr_type = check_type_expr env e1 in
       let key_type = check_type_expr env e2 in
-      (match mapping_type with
-       | TMapping (expected_key_type, value_type) -> 
+      (match expr_type with
+        | TMapping (expected_key_type, value_type) -> 
            check_type expected_key_type key_type; 
            value_type
-       | _ -> failwith "Type error: expected mapping type")
+        | TList t -> 
+           check_type TInt key_type;
+           t
+        | _ -> failwith "Type error: expected mapping type")
+  | TupleAccess (e1, e2) -> 
+      let tuple_type = check_type_expr env e1 in
+      let key_type = check_type_expr env e2 in
+      (match tuple_type with
+      | TTuple l -> 
+          (match key_type with
+          | TInt -> 
+              (match e2 with
+              | Int i -> (List.nth l i)
+              | _ -> failwith "Type error: tuple access expected int"
+              )
+          | _ -> failwith "Type error: tuple access expected int")
+      | _ -> failwith "Type error: expected tuple type")
   | Assign (e1, e2) -> 
       let var_type = check_type_expr env e1 in
       let value_type = check_type_expr env e2 in
       check_type var_type value_type;
       TUnit
   | List l -> 
-      (* TODO: should every expr be of same type? *)
-      TTuple (List.map (check_type_expr env) l)
+      let t = List.map (fun expr -> check_type_expr env expr) l in
+      let tl = List.hd (List.rev t) in
+      List.iter (fun t' -> check_type tl t') t;
+      (TList tl)
+
+let check_duplicated_call name expr = 
+  let aux = List.fold_left (fun acc expr ->
+  match expr with
+    | App (Var n, _) when n = name -> acc + 1
+    | _ -> acc
+  ) 0 expr in
+  if aux > 1 then
+    failwith (Printf.sprintf "Error: duplicated call to '%s'" name)
+
+let check_arg_list_is_type_abs fn_name env expr = 
+  let aux args = (match args with
+  | List args -> 
+    List.iter (fun arg ->
+      (match arg with
+      | String n -> 
+        let ty = type_of_var env n in
+        (match ty with
+        | TArrow _ -> ()
+        | _ -> failwith (Printf.sprintf "Error on %s: variable '%s' is not a function" fn_name n))
+      | _ -> failwith (Printf.sprintf "Error on %s: expected string" fn_name))
+    ) args
+  | _ -> failwith (Printf.sprintf "Error on %s: expected list" fn_name)) in
+
+  List.iter (fun e ->
+    match e with
+    | App (Var n, args) when n = fn_name -> aux args
+    | _ -> ()
+  ) expr
+
+let check_pure_functions fn_name env expr =
+  let rec check_body fn_name body = 
+    List.iter (fun b -> 
+      (match b with
+        | Assign _ -> failwith (Printf.sprintf "Error on '%s': mutable assign inside pure function" fn_name)
+        | App (Var "emit", _) -> failwith (Printf.sprintf "Error on '%s': emiting event inside pure function" fn_name)
+        | Let_brace (_, expressions)
+        | Abs (_, _, expressions) -> check_body fn_name expressions
+        | Let (_, _, expressions) -> check_body fn_name [expressions]
+        | If (_, then_branch, else_branch) -> 
+          check_body fn_name then_branch;
+          check_body fn_name else_branch
+        | App (Var n, args) when n = fn_name -> check_function n expr
+        | _ -> ()
+      )
+    ) body
+
+  and check_function fn_name expr =
+    List.iter (fun expr ->
+      match expr with
+      | Let_brace (n, expressions) when n = fn_name -> check_body fn_name expressions
+      | _ -> ()
+    ) expr
+  in
+
+  List.iter (fun e ->
+    match e with 
+    | App (Var n, args) when n = fn_name ->
+      (match args with
+        | List args -> 
+          List.iter (fun arg ->
+            (match arg with
+            | String n -> check_function n expr
+            | _ -> failwith (Printf.sprintf "Error on %s: expected string" fn_name))
+          ) args
+        | _ -> failwith (Printf.sprintf "Error on %s: expected list" fn_name)
+      )
+    | _ -> ()
+  ) expr
 
