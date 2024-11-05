@@ -12,7 +12,7 @@
 %token EOF IF THEN ELSE SEMICOLON
 %token EQ NEQ LT LTE GT GTE COLON STRUCT
 %token LET IN UNDERSCORE RBRACKET LBRACKET
-%token LBRACE RBRACE MAPPING
+%token LBRACE RBRACE MAPPING FN
 %token BOOL_TYPE INT_TYPE STRING_TYPE
 
 %left PLUS MINUS
@@ -38,6 +38,7 @@ tuple_elements:
 expr:
   | e1 = expr e2 = term { App(e1, e2) }
   | IF e1 = expr THEN e2 = expr_list ELSE e3 = expr_list { If(e1, e2, e3) }
+  | LET IDENT EQ LBRACE e1 = expr_list RBRACE { Let_brace($2, e1) }
   | LET IDENT EQ e1 = expr IN e2 = expr { Let($2, e1, e2) }
   | VAR IDENT COLON t = ty COLON EQ e1 = expr { VarBind($2, t, e1) }
   | MAPPING LPAREN t1 = ty COMMA t2 = ty RPAREN IDENT  { Mapping($7, t1, t2) }

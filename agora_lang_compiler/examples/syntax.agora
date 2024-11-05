@@ -6,23 +6,53 @@ var last_emitted: string := "none";
 mapping (string, int) balances;
 
 (* functions *)
-let create_user_tuple = \x: string -> \y: int -> (x, y) in
+let create_user_tuple = {
+  \x: string -> \y: int -> (x, y)
+};
 
-let get_balance = \addr: string -> balances[addr] in
+let get_balance = {
+ \addr: string -> balances[addr]
+};
 
-let sum = \x: int -> \y: int -> x + y in
+let publish = {
+  \x : string -> 2
+};
 
-let transfer = \from: string -> \to: string -> \amount: int ->
-  let from_balance = get_balance from in
-  let to_balance = get_balance to in
-  if (from_balance >= amount) then 
-    balances[from] := from_balance - amount;
-    balances[to] := to_balance + amount;
-    last_emitted := "transfer";
-    emit
-  else 
-    error "Insufficient funds"
-in
+let emit = {
+  \x : string -> x
+};
+
+let error = {
+ \x : string -> x
+}; 
+
+let get_balance = {
+  \addr: string -> balances[addr]
+};
+
+let update_balance = {
+  \addr: string -> \amount: int ->
+    balances[addr] := amount;
+    last_emitted := addr
+};
+
+let reset_balance = {
+  balances[addr] := 0;
+  last_emitted := addr
+};
+
+let transfer = {
+  \from: string -> \to: string -> \amount: int ->
+    let from_balance = (get_balance from) in
+    let to_balance = (get_balance to) in
+    if (from_balance >= amount) then 
+      balances[from] := from_balance - amount;
+      balances[to] := to_balance + amount;
+      last_emitted := "transfer";
+      emit "Transfer"
+    else 
+      error "Insufficient funds"
+};
 
 (* publish the functions *)
-publish ([transfer;get_balance])
+publish "test"
