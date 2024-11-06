@@ -13,7 +13,7 @@
 %token EQ NEQ LT LTE GT GTE COLON STRUCT
 %token LET IN UNDERSCORE RBRACKET LBRACKET
 %token LBRACE RBRACE MAPPING FN LIST_TYPE DOT
-%token BOOL_TYPE INT_TYPE STRING_TYPE TUPLE_TYPE
+%token BOOL_TYPE INT_TYPE STRING_TYPE TUPLE_TYPE EVENT EMIT
 
 %left PLUS MINUS
 %left TIMES DIVIDE
@@ -50,6 +50,7 @@ expr:
   | LET IDENT EQ e1 = expr IN e2 = expr { Let($2, e1, e2) }
   | VAR IDENT COLON t = ty COLON EQ e1 = expr { VarBind($2, t, e1) }
   | MAPPING LPAREN t1 = ty COMMA t2 = ty RPAREN IDENT  { Mapping($7, t1, t2) }
+  | EVENT IDENT LPAREN t1 = ty COMMA t2 = ty COMMA t3 = ty RPAREN { Event($2, t1, t2, t3) }
   | LBRACKET expr_list RBRACKET { List($2) }
   | LPAREN tuple_elements RPAREN { Tuple($2) }
   | LBRACKET list_elements RBRACKET { List($2) }
@@ -75,6 +76,7 @@ term:
   | LPAREN e = expr RPAREN { e }
   | IDENT LBRACKET expr RBRACKET { IndexAccess(Var $1, $3) }
   | IDENT DOT expr { TupleAccess(Var $1, $3) }
+  | EMIT IDENT LPAREN e1 = expr COMMA e2 = expr COMMA e3 = expr RPAREN { Emit($2, e1, e2, e3) }
 
 ty:
   | LPAREN t1 = ty ARROW t2 = ty RPAREN { TArrow(t1, t2) }

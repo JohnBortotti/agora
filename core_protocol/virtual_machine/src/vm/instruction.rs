@@ -141,7 +141,6 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
         instructions.push(Instruction::Mod);
         i += 1;
       }
-
       // comparison Operations
       0x10 => {
         instructions.push(Instruction::Eq);
@@ -806,4 +805,14 @@ mod tests {
       vec![Instruction::GetBlockTimestamp]
       );
   }
+
+  #[test]
+    fn test_testing() {
+      let program = VM::parse_program_to_bytecode("01000941676f7261436f696e30000a746f6b656e5f6e616d65").unwrap();
+      assert_eq!(
+        decode_bytecode_to_instruction(&program).unwrap(),
+        vec![Instruction::GetGasPrice]
+        );
+    }
+
 }

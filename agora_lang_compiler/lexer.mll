@@ -24,6 +24,8 @@ rule read = parse
     | "else"    -> ELSE
     | "var"     -> VAR
     | "mapping" -> MAPPING
+    | "event"   -> EVENT
+    | "emit"    -> EMIT
     | _         -> IDENT lxm
   }
   | [' ' '\t' '\r' '\n']       { read lexbuf }

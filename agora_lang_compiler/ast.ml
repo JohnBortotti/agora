@@ -7,6 +7,7 @@ type ty =
   | TMapping of ty * ty
   | TList of ty
   | TTuple of ty list
+  | TEvent of ty * ty * ty
 
 type expr =
   | Int of int
@@ -26,6 +27,8 @@ type expr =
   | IndexAccess of expr * expr
   | TupleAccess of expr * expr
   | Assign of expr * expr
+  | Event of string * ty * ty * ty
+  | Emit of string * expr * expr * expr
 
 and binop = Add | Sub | Mul | Div | Eq | Neq | Lt | Lte | Gt | Gte
 
@@ -52,6 +55,7 @@ let rec string_of_ty = function
   | TMapping (t1, t2) -> Printf.sprintf "mapping(%s, %s)" (string_of_ty t1) (string_of_ty t2)
   | TTuple l -> Printf.sprintf "tuple (%s)" (String.concat ", " (List.map string_of_ty l))
   | TList t -> Printf.sprintf "list (%s)" (string_of_ty t)
+  | TEvent (t1, t2, t3) -> Printf.sprintf "event (%s, %s, %s)" (string_of_ty t1) (string_of_ty t2) (string_of_ty t3)
 
 let rec string_of_expr = function
   | Int i -> string_of_int i
@@ -88,6 +92,14 @@ let rec string_of_expr = function
       Printf.sprintf "TupleAccess (%s.%s)" (string_of_expr e1) (string_of_expr e2)
   | Assign (e1, e2) -> 
       Printf.sprintf "Assign (%s := %s)" (string_of_expr e1) (string_of_expr e2)
+  | Event (name, t1, t2, t3) -> 
+      Printf.sprintf "Event (%s: (%s, %s, %s))" name
+      (string_of_ty t1)
+      (string_of_ty t2)
+      (string_of_ty t3)
+  | Emit (name, e1, e2, e3) -> 
+      Printf.sprintf "Emit (%s(%s, %s, %s))" name 
+      (string_of_expr e1) (string_of_expr e2) (string_of_expr e3)
 
 type type_env = (string, ty) Hashtbl.t
 
@@ -114,8 +126,9 @@ let rec check_type_expr (env: type_env) (expr: expr) : ty =
       Hashtbl.add env x ty;
       check_type_expr env e
   | Abs (x, ty, body) -> 
-      Hashtbl.add env x ty;
-      let t = List.map (fun expr -> check_type_expr env expr) body in
+      let scoped_env = Hashtbl.copy env in
+      Hashtbl.add scoped_env x ty;
+      let t = List.map (fun expr -> check_type_expr scoped_env expr) body in
       let tl = List.hd (List.rev t) in
       TArrow (ty, tl)
   | App (e1, e2) -> 
@@ -136,8 +149,9 @@ let rec check_type_expr (env: type_env) (expr: expr) : ty =
       then_type
   | Let (x, e1, e2) -> 
       let t1 = check_type_expr env e1 in
-      Hashtbl.add env x t1;
-      check_type_expr env e2
+      let scoped_env = Hashtbl.copy env in
+      Hashtbl.add scoped_env x t1;
+      check_type_expr scoped_env e2
   | Let_brace (x, e) -> 
       let t = List.map (fun expr -> check_type_expr env expr) e in
       let tl = List.hd (List.rev t) in
@@ -192,6 +206,21 @@ let rec check_type_expr (env: type_env) (expr: expr) : ty =
       let tl = List.hd (List.rev t) in
       List.iter (fun t' -> check_type tl t') t;
       (TList tl)
+  | Event (name, t1, t2, t3) -> 
+      Hashtbl.add env name (TEvent (t1, t2, t3));
+      TEvent (t1, t2, t3)
+  | Emit (name, e1, e2, e3) -> 
+      let event_type = check_type_expr env (Var name) in
+      let e1_type = check_type_expr env e1 in
+      let e2_type = check_type_expr env e2 in
+      let e3_type = check_type_expr env e3 in
+      (match event_type with
+      | TEvent (t1, t2, t3) -> 
+          check_type t1 e1_type;
+          check_type t2 e2_type;
+          check_type t3 e3_type;
+          TUnit
+      | _ -> failwith "Type error: expected event type")
 
 let check_duplicated_call name expr = 
   let aux = List.fold_left (fun acc expr ->

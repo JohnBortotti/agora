@@ -1,17 +1,9 @@
 (*
 TODO:
-  - [x] type-check
-  - [x] function "publish"
-    - [x] list syntax
-    - [x] reserve keyword "publish"
-    - [x] check duplicated calls
-    - [x] check if all args are Abstraction
-  - [x] function "view"
-    - [x] reserve keyword "view"
-    - [x] check duplicated calls
-    - [x] check function purity
-  - [x] tuple access, list acess, mapping access
-  - [ ] list, tuple and mapping functions
+  - [x] event type
+  - [ ] hash function (hash strings, event signature)
+  - [ ] opcode emit will hash the event signature
+  - [ ] list, tuple and mapping functions (folds)
   - [ ] code-gen
 *)
 let () =
@@ -25,6 +17,7 @@ let () =
       try
         (* expression parsing *)
         let ast = Parser.main Lexer.read lexbuf in
+        Printf.printf "Parsing passed\n\n";
         close_in channel;
         (* List.iter (fun expr -> Printf.printf "%s\n\n" (Ast.string_of_expr expr)) ast; *)
 
@@ -32,7 +25,7 @@ let () =
         let type_env: Ast.type_env = Hashtbl.create 10 in
         Hashtbl.add type_env "publish" (Ast.TArrow (Ast.TList Ast.TString, Ast.TUnit));
         Hashtbl.add type_env "view" (Ast.TArrow (Ast.TList Ast.TString, Ast.TUnit));
-        Hashtbl.add type_env "emit" (Ast.TArrow (Ast.TString, Ast.TUnit));
+        (* Hashtbl.add type_env "emit" (Ast.TArrow (Ast.TString, Ast.TUnit)); *)
         Hashtbl.add type_env "error" (Ast.TArrow (Ast.TString, Ast.TUnit));
         Hashtbl.add type_env "get_address_balance" (Ast.TArrow (Ast.TString, Ast.TInt));
 
@@ -40,11 +33,11 @@ let () =
         let type_check_exprs exprs =
           List.iter (fun expr ->
             try
-              (* let inferred_type = Ast.check_type_expr type_env expr in *)
-              (* Printf.printf "Expression: %s\nType: %s\n\n" *)
-              (*   (Ast.string_of_expr expr) *)
-              (*   (Ast.string_of_ty inferred_type) *)
-              let _ = Ast.check_type_expr type_env expr in ()
+              let inferred_type = Ast.check_type_expr type_env expr in
+              Printf.printf "Expression: %s\nType: %s\n\n"
+                (Ast.string_of_expr expr)
+                (Ast.string_of_ty inferred_type)
+              (* let _ = Ast.check_type_expr type_env expr in () *)
             with Failure msg ->
               Printf.eprintf "Type error: %s\nExpression: %s\n\n%!" msg (Ast.string_of_expr expr);
               exit 1
@@ -67,6 +60,14 @@ let () =
 
         (* check if functions of "view" are pure *)
         Ast.check_pure_functions "view" type_env ast;
+
+        (* let opcode_buf = Buffer.create 100 in *)
+        (* List.iter (fun f ->  *)
+        (*   Code_gen.compile_expr opcode_buf f; *)
+        (*   Buffer.add_char opcode_buf '\n'; *)
+        (*   Buffer.add_char opcode_buf '\n' *)
+        (* ) ast; *)
+        (* print_endline (Buffer.contents opcode_buf) *)
 
       with
       | Lexer.Error msg ->

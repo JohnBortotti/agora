@@ -2,6 +2,8 @@ var total_supply: int := 50;
 
 mapping (string, int) balances;
 
+event Transfer(string, string, int);
+
 let get_balance = {
   \addr: string -> balances[addr]
 };
@@ -14,7 +16,7 @@ let transfer = {
     if (from_balance >= amount) then 
       balances[from] := from_balance - amount;
       balances[to] := to_balance + amount;
-      emit "Transfer"
+      emit Transfer(from, to, amount)
     else 
       error "Insufficient funds"
 };
