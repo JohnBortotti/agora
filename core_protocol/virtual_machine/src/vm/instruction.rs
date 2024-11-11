@@ -39,6 +39,9 @@ pub enum Instruction {
   Jump { destination: usize },
   JumpIf { destination: usize },
   Halt { message: String},
+  
+  // hash Operations
+  Sha256 { values: u8 },
 
   // call/message operations
   // TODO: unit tests
@@ -81,6 +84,9 @@ pub fn get_instruction_gas_cost(instruction: &Instruction) -> u32 {
     // control Flow Operations
     Instruction::Jump { .. } | Instruction::JumpIf { .. } => 8,
     Instruction::Halt { .. } => 2,
+
+    // hash Operations
+    Instruction::Sha256 { .. } => 10,
 
     // call/Message Operations
     Instruction::Call { .. } => 10,
@@ -273,6 +279,17 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
 
         instructions.push(Instruction::Halt{message});
         i += 1;
+      }
+      
+      // hash Operations
+      0x43 => {
+        if i + 1 >= bytecode.len() {
+          return Err("Sha256 instruction expects a length".to_string());
+        }
+
+        let values = bytecode[i + 32];
+        instructions.push(Instruction::Sha256 { values });
+        i += 33;
       }
 
       // call/Message Operations
@@ -807,12 +824,16 @@ mod tests {
   }
 
   #[test]
-    fn test_testing() {
-      let program = VM::parse_program_to_bytecode("01000941676f7261436f696e30000a746f6b656e5f6e616d65").unwrap();
+    fn test_decode_sha256_function() {
+      let program = VM::parse_program_to_bytecode("
+        43
+        0000000000000000000000000000000000000000000000000000000000000002
+      ").unwrap();
       assert_eq!(
         decode_bytecode_to_instruction(&program).unwrap(),
-        vec![Instruction::GetGasPrice]
-        );
+        vec![Instruction::Sha256 { values: 2 }]
+      );
+
     }
 
 }

@@ -13,3 +13,4 @@ ocaml-sys = "0.24.0"
 uuid = { version = "1.10.0", features = ["v4", "serde"] }
 ethnum = { version = "1.5.0", features = ["serde"] }
 hex = "0.4.3"
+sha2 = "0.10.8"

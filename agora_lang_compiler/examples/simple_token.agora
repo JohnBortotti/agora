@@ -18,7 +18,8 @@ let transfer = {
       balances[to] := to_balance + amount;
       emit Transfer(from, to, amount)
     else 
-      error "Insufficient funds"
+      emit Transfer(from, to, amount)
+      (*error "Insufficient funds"*)
 };
 
 publish (["transfer"]);

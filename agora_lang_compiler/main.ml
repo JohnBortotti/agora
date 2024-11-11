@@ -1,6 +1,7 @@
 (*
 TODO:
   - [x] event type
+  - [ ] VM change addrs strings to U256 (convert hex)
   - [ ] hash function (hash strings, event signature)
   - [ ] opcode emit will hash the event signature
   - [ ] list, tuple and mapping functions (folds)
@@ -33,11 +34,11 @@ let () =
         let type_check_exprs exprs =
           List.iter (fun expr ->
             try
-              let inferred_type = Ast.check_type_expr type_env expr in
-              Printf.printf "Expression: %s\nType: %s\n\n"
-                (Ast.string_of_expr expr)
-                (Ast.string_of_ty inferred_type)
-              (* let _ = Ast.check_type_expr type_env expr in () *)
+              (* let inferred_type = Ast.check_type_expr type_env expr in *)
+              (* Printf.printf "Expression: %s\nType: %s\n\n" *)
+              (*   (Ast.string_of_expr expr) *)
+              (*   (Ast.string_of_ty inferred_type) *)
+              let _ = Ast.check_type_expr type_env expr in ()
             with Failure msg ->
               Printf.eprintf "Type error: %s\nExpression: %s\n\n%!" msg (Ast.string_of_expr expr);
               exit 1
@@ -61,13 +62,10 @@ let () =
         (* check if functions of "view" are pure *)
         Ast.check_pure_functions "view" type_env ast;
 
-        (* let opcode_buf = Buffer.create 100 in *)
-        (* List.iter (fun f ->  *)
-        (*   Code_gen.compile_expr opcode_buf f; *)
-        (*   Buffer.add_char opcode_buf '\n'; *)
-        (*   Buffer.add_char opcode_buf '\n' *)
-        (* ) ast; *)
-        (* print_endline (Buffer.contents opcode_buf) *)
+        let opcode_buf = Buffer.create 100 in
+        let ctx = Code_gen.create_context () in
+        Code_gen.compile_program ctx opcode_buf ast;
+        print_endline (Buffer.contents opcode_buf)
 
       with
       | Lexer.Error msg ->

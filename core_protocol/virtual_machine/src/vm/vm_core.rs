@@ -8,6 +8,7 @@ use super::instruction::Instruction;
 use crate::jsonrpc;
 use serde_json::json;
 use crate::jsonrpc::{deserialize_response, JsonRpcRequest};
+use sha2::Digest;
 
 pub trait VMStateMachine {
   fn poll(&mut self) -> VMStatus;
@@ -582,6 +583,29 @@ impl VM {
           Err(message.to_string())
         }
 
+        Instruction::Sha256 { values } => {
+          let mut str_buffer = String::new();
+          for _ in 0..*values {
+            if let Some(value) = self.stack.pop() {
+              str_buffer.push_str(&value.to_string());
+            } else {
+              return Err("[VM] SHA256 failed: insufficient operands on stack".to_string());
+            }
+          }
+
+          let mut hasher = sha2::Sha256::new();
+          hasher.update(str_buffer.as_bytes());
+          let hash = hasher.finalize();
+
+          let hash_hex = format!("0x{}", hex::encode(hash));
+          let u256_hash = U256::from_str_hex(&hash_hex).unwrap();
+
+          self.stack.push(u256_hash);
+
+          self.pc += 1;
+          Ok(None)
+        }
+
         // call/message operations
         Instruction::Call { address, gas_limit, amount, payload } => {
           // println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
@@ -1058,5 +1082,25 @@ mod tests {
       data: "data".to_string().into(),
     }]);
     assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_sha256() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(1 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(3 as u64));
+
+    let instruction = Instruction::Sha256 { values: 2 };
+    vm.execute_instruction(&instruction).unwrap();
+
+    let expected_stack: Vec<U256> = vec![
+      (U256::from(1 as u64)),
+      (U256::from_str_radix(
+        "102499409242696708977622367173532599973197161335174963053596431290206366514027",
+        10).unwrap())
+    ];
+
+    assert_eq!(vm.stack, expected_stack);
   }
 }
