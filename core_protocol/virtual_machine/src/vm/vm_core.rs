@@ -77,11 +77,6 @@ pub struct VM {
   pub supplied_data: HashMap<Uuid, String>,
 }
 
-// TODO: 
-// - [ ] pointers to handle string data
-//  - [ ] handle strings
-//  - [ ] handle dictionaries
-
 // examples:
 //
 // // SUM 
@@ -514,8 +509,9 @@ impl VM {
             Err("[VM] NOT failed: insufficient operands on stack".to_string())
           }
         }
-        Instruction::Shl { shift } => {
+        Instruction::Shl => {
           if let Some(a) = self.stack.pop() {
+            let shift = self.stack.pop().unwrap().as_u32();
             let result = a << shift;
             self.stack.push(result);
             // println!("[VM] SHL {} << {} = {}", a, shift, result);
@@ -525,8 +521,9 @@ impl VM {
             Err("[VM] SHL failed: insufficient operands on stack".to_string())
           }
         }
-        Instruction::Shr { shift } => {
+        Instruction::Shr => {
           if let Some(a) = self.stack.pop() {
+            let shift = self.stack.pop().unwrap().as_u32();
             let result = a >> shift;
             self.stack.push(result);
             // println!("[VM] SHR {} >> {} = {}", a, shift, result);
@@ -562,16 +559,18 @@ impl VM {
         }
 
         // control flow operations
-        Instruction::Jump { destination } => {
+        Instruction::Jump => {
+          let destination = self.stack.pop().unwrap().as_usize();
           // println!("[VM] JUMP {}", destination);
-          self.pc = *destination;
+          self.pc = destination;
           Ok(None)
         }
-        Instruction::JumpIf { destination } => {
+        Instruction::JumpIf => {
           if let Some(condition) = self.stack.pop() {
             if condition != 0 {
+              let destination = self.stack.pop().unwrap().as_usize();
               // println!("[VM] JUMPIF {}", destination);
-              self.pc = *destination;
+              self.pc = destination;
             } else {
               self.pc += 1;
             }
@@ -580,9 +579,19 @@ impl VM {
             Err("[VM] JUMPIF failed: insufficient operands on stack".to_string())
           }
         }
-        Instruction::Halt { message } => {
+        Instruction::Halt => {
+          let msg_len = self.stack.pop().unwrap().as_usize();
+          let mut message = Vec::new();
+          for _ in 0..msg_len {
+            if let Some(value) = self.stack.pop() {
+              message.push(value.as_u8());
+            } else {
+              return Err("[VM] HALT failed: insufficient operands on stack".to_string());
+            }
+          }
+          let message = String::from_utf8(message);
           // println!("[VM] HALT");
-          Err(message.to_string())
+          Err(message.unwrap())
         }
 
         Instruction::Sha256 { values } => {
@@ -609,7 +618,20 @@ impl VM {
         }
 
         // call/message operations
-        Instruction::Call { address, gas_limit, amount, payload } => {
+        Instruction::Call => {
+          let payload_len = self.stack.pop().unwrap().as_usize();
+          let mut payload = Vec::new();
+          for _ in 0..payload_len {
+            if let Some(value) = self.stack.pop() {
+              payload.push(value.as_u8());
+            } else {
+              return Err("[VM] CALL failed: insufficient operands on stack".to_string());
+            }
+          }
+          let payload_str = String::from_utf8(payload).unwrap();
+          let amount = self.stack.pop().unwrap();
+          let gas_limit = self.stack.pop().unwrap();
+          let address = self.stack.pop().unwrap().to_string();
           // println!("[VM] CALL {} {} {} {}", address, gas_limit, amount, payload);
 
           match &self.state {
@@ -635,11 +657,11 @@ impl VM {
                           hash: "hash".to_string(),
                           sender: self.transaction.receiver.clone(),
                           receiver: address.clone().to_string(),
-                          amount: *amount,
-                          gas_limit: *gas_limit,
+                          amount,
+                          gas_limit,
                           gas_price: self.transaction.gas_price,
                           nonce: U256::from(0 as u64),
-                          payload: payload.clone(),
+                          payload: payload_str,
                           signature: "signature".to_string(),
                         })))
                 }
@@ -652,18 +674,21 @@ impl VM {
                       hash: "hash".to_string(),
                       sender: self.transaction.receiver.clone(),
                       receiver: address.clone().to_string(),
-                      amount: *amount,
-                      gas_limit: *gas_limit,
+                      amount,
+                      gas_limit,
                       gas_price: self.transaction.gas_price,
                       nonce: U256::from(0 as u64),
-                      payload: payload.clone(),
+                      payload: payload_str,
                       signature: "signature".to_string(),
                     })))
             }
           }
         }
-        Instruction::Transaction { receiver, amount } => {
-          // println!("[VM] TRANSACTION {} {}", receiver, amount);
+        Instruction::Transaction => {
+          let amount = self.stack.pop().unwrap();
+          let receiver = self.stack.pop().unwrap().to_string();
+
+          println!("[VM] TRANSACTION {} {}", receiver, amount);
 
           match self.state {
             VMStatus::ReceivedData { request_id } => {
@@ -685,13 +710,13 @@ impl VM {
                     .result.unwrap()["balance"].take().as_i64().unwrap();
                   let balance_u256 = U256::from(balance as u64);
 
-                  if balance_u256 < *amount {
+                  if balance_u256 < amount {
                     return Err("Insufficient balance for internal_transaction".to_string())
                   } else {
                     self.overlayed_changeset.internal_transactions.push(InternalTransaction {
                       sender: self.transaction.receiver.clone(),
                       receiver: receiver.to_string(),
-                      amount: *amount
+                      amount
                     });
 
                     Ok(None)
@@ -711,20 +736,26 @@ impl VM {
             }
           }
         }
-        Instruction::Emit { event_name, data, topic1, topic2, topic3 } => {
-          // println!("[VM] EMIT: \n
-          //        name: {}\n
-          //        topic1: {}\n
-          //        topic2\n {}\n
-          //        topic3:{}\n
-          //        data: {:?}",
-          //        event_name, topic1, topic2, topic3, data);
+        Instruction::Emit => {
+          let name = self.stack.pop().unwrap().to_string();
+          let topic1 = self.stack.pop().unwrap();
+          let topic2 = self.stack.pop().unwrap();
+          let topic3 = self.stack.pop().unwrap();
+          let data_len = self.stack.pop().unwrap().as_usize();
+          let mut data = Vec::new();
+          for _ in 0..data_len {
+            if let Some(value) = self.stack.pop() {
+              data.push(value.as_u8());
+            } else {
+              return Err("[VM] EMIT failed: insufficient operands on stack".to_string());
+            }
+          }
 
           self.overlayed_changeset.events.push(Event {
-            name: event_name.clone(),
+            name: name.clone(),
             address: self.transaction.receiver.clone(),
-            topics: vec![*topic1, *topic2, *topic3],
-            data: data.clone(),
+            topics: vec![topic1, topic2, topic3],
+            data
           });
           self.pc += 1;
           Ok(None)
@@ -738,8 +769,9 @@ impl VM {
         }
 
         // environment operations
-        Instruction::GetBalance { address } => {
-          // println!("[VM] GETBALANCE {}", address);
+        Instruction::GetBalance => {
+          let address = self.stack.pop().unwrap().to_string();
+          println!("[VM] GET_BALANCE {}", address);
           self.pc += 1;
           Ok(None)
         }
@@ -1001,8 +1033,9 @@ mod tests {
   #[test]
   fn test_instruction_shl() {
     let mut vm = mock_vm();
+    vm.stack.push(U256::from(1 as u64));
     vm.stack.push(U256::from(3 as u64));
-    let instruction = Instruction::Shl { shift: 1 };
+    let instruction = Instruction::Shl;
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.stack, vec![U256::from(6 as u64)]);
     assert_eq!(vm.pc, 1);
@@ -1011,8 +1044,9 @@ mod tests {
   #[test]
   fn test_instruction_shr() {
     let mut vm = mock_vm();
+    vm.stack.push(U256::from(1 as u64));
     vm.stack.push(U256::from(6 as u64));
-    let instruction = Instruction::Shr { shift: 1 };
+    let instruction = Instruction::Shr;
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.stack, vec![U256::from(3 as u64)]);
     assert_eq!(vm.pc, 1);
@@ -1032,7 +1066,8 @@ mod tests {
   #[test]
   fn test_instruction_jump() {
     let mut vm = mock_vm();
-    let instruction = Instruction::Jump { destination: 7 };
+    vm.stack.push(U256::from(7 as u64));
+    let instruction = Instruction::Jump;
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.pc, 7);
   }
@@ -1040,17 +1075,19 @@ mod tests {
   #[test]
   fn test_instruction_jumpif() {
     let mut vm = mock_vm();
+    vm.stack.push(U256::from(19 as u64));
     vm.stack.push(U256::from(1 as u64));
-    let instruction = Instruction::JumpIf { destination: 7 };
+    let instruction = Instruction::JumpIf;
     vm.execute_instruction(&instruction).unwrap();
-    assert_eq!(vm.pc, 7);
+    assert_eq!(vm.pc, 19);
   }
 
   #[test]
   fn test_instruction_jumpif_false() {
     let mut vm = mock_vm();
+    vm.stack.push(U256::from(19 as u64));
     vm.stack.push(U256::from(0 as u64));
-    let instruction = Instruction::JumpIf { destination: 7 };
+    let instruction = Instruction::JumpIf;
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.pc, 1);
   }
@@ -1058,31 +1095,38 @@ mod tests {
   #[test]
   fn test_instruction_halt() {
     let mut vm = mock_vm();
-    let instruction = Instruction::Halt { message: "custom_error_message".to_string() };
+    vm.stack.push(U256::from(97 as u64));
+    vm.stack.push(U256::from(98 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    let instruction = Instruction::Halt;
     let result = vm.execute_instruction(&instruction);
-    assert_eq!(result, Err("custom_error_message".to_string()));
+    assert_eq!(result, Err("ba".to_string()));
   }
 
   #[test]
   fn test_instruction_emit() {
     let mut vm = mock_vm();
-    let instruction = Instruction::Emit { 
-      event_name: "event".to_string(),
-      data: "data".to_string().into(),
-      topic1: U256::from(1 as u32),
-      topic2: U256::from(2 as u32),
-      topic3: U256::from(3 as u32),
-    };
+    vm.stack.push(U256::from(97 as u64));
+    vm.stack.push(U256::from(100 as u64));
+    vm.stack.push(U256::from(2 as u64));
+
+    vm.stack.push(U256::from(3 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(1 as u64));
+
+    vm.stack.push(U256::from(12345 as u64));
+
+    let instruction = Instruction::Emit;
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.overlayed_changeset.events, vec![Event {
-      name: "event".to_string(),
+      name: "12345".to_string(),
       address: vm.transaction.receiver.clone(),
       topics: vec![
         U256::from(1 as u32),
         U256::from(2 as u32),
         U256::from(3 as u32),
       ],
-      data: "data".to_string().into(),
+      data: "da".to_string().into(),
     }]);
     assert_eq!(vm.pc, 1);
   }
