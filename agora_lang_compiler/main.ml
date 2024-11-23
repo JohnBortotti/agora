@@ -24,10 +24,6 @@ let () =
 
         (* add reserved functions on env *)
         let type_env: Ast.type_env = Hashtbl.create 10 in
-        Hashtbl.add type_env "publish" (Ast.TArrow (Ast.TList Ast.TString, Ast.TUnit));
-        Hashtbl.add type_env "view" (Ast.TArrow (Ast.TList Ast.TString, Ast.TUnit));
-        (* Hashtbl.add type_env "emit" (Ast.TArrow (Ast.TString, Ast.TUnit)); *)
-        Hashtbl.add type_env "error" (Ast.TArrow (Ast.TString, Ast.TUnit));
         Hashtbl.add type_env "get_address_balance" (Ast.TArrow (Ast.TString, Ast.TInt));
 
         (* type-checking *)
@@ -48,21 +44,26 @@ let () =
         Printf.printf "Type check passed\n\n";
 
         (* check duplicated calls for "publish" *)
-        Ast.check_duplicated_call "publish" ast;
+        List.fold_left (fun acc expr ->
+          match expr with
+          | Ast.Publish _ -> acc + 1
+          | _ -> acc
+        ) 0 ast |> (fun n -> if n > 1 then raise (Failure "Duplicated calls for 'publish'"));
+        (* check duplicated calls for "view" *)
 
-        (* check if args of "publish" are Abstractions *)
-        Ast.check_arg_list_is_type_abs "publish" type_env ast;
+        (* TODO: check if args of "publish" are Abstractions *)
 
         (* check duplicated calls for "view" *)
-        Ast.check_duplicated_call "view" ast;
+        List.fold_left (fun acc expr ->
+          match expr with
+          | Ast.View _ -> acc + 1
+          | _ -> acc
+        ) 0 ast |> (fun n -> if n > 1 then raise (Failure "Duplicated calls for 'view'"));
 
-        (* check if args of "view" are Abstractions *)
-        Ast.check_arg_list_is_type_abs "view" type_env ast;
+        (* TODO: check if args of "view" are Abstractions *)
+        (* TODO: check if functions of "view" are pure *)
 
-        (* check if functions of "view" are pure *)
-        Ast.check_pure_functions "view" type_env ast;
-
-        let opcode_buf = Buffer.create 100 in
+        let opcode_buf = Buffer.create 256 in
         let ctx = Code_gen.create_context () in
         Code_gen.compile_program ctx opcode_buf ast;
         print_endline (Buffer.contents opcode_buf)

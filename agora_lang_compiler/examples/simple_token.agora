@@ -22,5 +22,5 @@ let transfer = {
       (*error "Insufficient funds"*)
 };
 
-publish (["transfer"]);
-view (["get_balance"])
+publish [transfer];
+view [get_balance]

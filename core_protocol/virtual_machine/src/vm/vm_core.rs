@@ -538,8 +538,9 @@ impl VM {
         }
 
         // storage operations
-        Instruction::Set { key } => {
+        Instruction::Set => {
           if let Some(value) = self.stack.pop() {
+            let key = self.stack.pop().unwrap().to_string();
             self.storage.insert(key.clone(), value);
             // println!("[VM] SET {} = {}", key, value);
             self.pc += 1;
@@ -548,8 +549,9 @@ impl VM {
             Err("[VM] SET failed: insufficient operands on stack".to_string())
           }
         }
-        Instruction::Get { key } => {
-          if let Some(value) = self.storage.get(key) {
+        Instruction::Get => {
+          let key = self.stack.pop().unwrap().to_string();
+          if let Some(value) = self.storage.get(&key) {
             self.stack.push(*value);
             // println!("[VM] GET {} = {}", key, value);
             self.pc += 1;
@@ -1019,10 +1021,11 @@ mod tests {
   #[test]
   fn test_instruction_set() {
     let mut vm = mock_vm();
+    vm.stack.push(U256::from(35 as u64));
     vm.stack.push(U256::from(2 as u64));
-    let instruction = Instruction::Set { key : "key".to_string() }; 
+    let instruction = Instruction::Set; 
     vm.execute_instruction(&instruction).unwrap();
-    assert_eq!(vm.storage, HashMap::from_iter(vec![("key".to_string(), U256::from(2 as u64))]));
+    assert_eq!(vm.storage, HashMap::from_iter(vec![("35".to_string(), U256::from(2 as u64))]));
     assert_eq!(vm.pc, 1);
   }
 

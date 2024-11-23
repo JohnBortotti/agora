@@ -29,6 +29,9 @@ type expr =
   | Assign of expr * expr
   | Event of string * ty * ty * ty
   | Emit of string * expr * expr * expr
+  | Publish of expr list
+  | View of expr list
+  | Error of expr
 
 and binop = Add | Sub | Mul | Div | Eq | Neq | Lt | Lte | Gt | Gte
 
@@ -100,6 +103,12 @@ let rec string_of_expr = function
   | Emit (name, e1, e2, e3) -> 
       Printf.sprintf "Emit (%s(%s, %s, %s))" name 
       (string_of_expr e1) (string_of_expr e2) (string_of_expr e3)
+  | Publish l -> 
+      Printf.sprintf "Publish [%s]" (String.concat "; " (List.map string_of_expr l))
+  | View l -> 
+      Printf.sprintf "View [%s]" (String.concat "; " (List.map string_of_expr l))
+  | Error e ->
+      Printf.sprintf "Error (%s)" (string_of_expr e)
 
 type type_env = (string, ty) Hashtbl.t
 
@@ -221,6 +230,22 @@ let rec check_type_expr (env: type_env) (expr: expr) : ty =
           check_type t3 e3_type;
           TUnit
       | _ -> failwith "Type error: expected event type")
+  (* TODO: check if expressions are type Let_brace(Abs) *)
+  | Publish l -> 
+      let t = List.map (fun expr -> check_type_expr env expr) l in
+      let tl = List.hd (List.rev t) in
+      List.iter (fun t' -> check_type tl t') t;
+      TUnit
+  (* TODO: check if expressions are type Let_brace(Abs) *)
+  | View l -> 
+      let t = List.map (fun expr -> check_type_expr env expr) l in
+      let tl = List.hd (List.rev t) in
+      List.iter (fun t' -> check_type tl t') t;
+      TUnit
+  | Error e -> 
+      let t = check_type_expr env e in
+      check_type TString t;
+      TUnit
 
 let check_duplicated_call name expr = 
   let aux = List.fold_left (fun acc expr ->
@@ -231,25 +256,25 @@ let check_duplicated_call name expr =
   if aux > 1 then
     failwith (Printf.sprintf "Error: duplicated call to '%s'" name)
 
-let check_arg_list_is_type_abs fn_name env expr = 
-  let aux args = (match args with
-  | List args -> 
-    List.iter (fun arg ->
-      (match arg with
-      | String n -> 
-        let ty = type_of_var env n in
-        (match ty with
-        | TArrow _ -> ()
-        | _ -> failwith (Printf.sprintf "Error on %s: variable '%s' is not a function" fn_name n))
-      | _ -> failwith (Printf.sprintf "Error on %s: expected string" fn_name))
-    ) args
-  | _ -> failwith (Printf.sprintf "Error on %s: expected list" fn_name)) in
-
-  List.iter (fun e ->
-    match e with
-    | App (Var n, args) when n = fn_name -> aux args
-    | _ -> ()
-  ) expr
+(* let check_arg_list_is_type_abs fn_name env expr =  *)
+(*   let aux args = (match args with *)
+(*   | List args ->  *)
+(*     List.iter (fun arg -> *)
+(*       (match arg with *)
+(*       | String n ->  *)
+(*         let ty = type_of_var env n in *)
+(*         (match ty with *)
+(*         | TArrow _ -> () *)
+(*         | _ -> failwith (Printf.sprintf "Error on %s: variable '%s' is not a function" fn_name n)) *)
+(*       | _ -> failwith (Printf.sprintf "Error on %s: expected string" fn_name)) *)
+(*     ) args *)
+(*   | _ -> failwith (Printf.sprintf "Error on %s: expected list" fn_name)) in *)
+(**)
+(*   List.iter (fun e -> *)
+(*     match e with *)
+(*     | App (Var n, args) when n = fn_name -> aux args *)
+(*     | _ -> () *)
+(*   ) expr *)
 
 let check_pure_functions fn_name env expr =
   let rec check_body fn_name body = 

@@ -14,6 +14,7 @@
 %token LET IN UNDERSCORE RBRACKET LBRACKET
 %token LBRACE RBRACE MAPPING FN LIST_TYPE DOT
 %token BOOL_TYPE INT_TYPE STRING_TYPE TUPLE_TYPE EVENT EMIT
+%token ERROR PUBLISH VIEW
 
 %left PLUS MINUS
 %left TIMES DIVIDE
@@ -49,6 +50,9 @@ expr:
   | LET IDENT EQ LBRACE e1 = expr_list RBRACE { Let_brace($2, e1) }
   | LET IDENT EQ e1 = expr IN e2 = expr { Let($2, e1, e2) }
   | VAR IDENT COLON t = ty COLON EQ e1 = expr { VarBind($2, t, e1) }
+  | PUBLISH LBRACKET e1 = expr_list RBRACKET { Publish(e1) }
+  | VIEW LBRACKET e1 = expr_list RBRACKET { View(e1) }
+  | ERROR LPAREN e1 = expr RPAREN { Error(e1) }
   | MAPPING LPAREN t1 = ty COMMA t2 = ty RPAREN IDENT  { Mapping($7, t1, t2) }
   | EVENT IDENT LPAREN t1 = ty COMMA t2 = ty COMMA t3 = ty RPAREN { Event($2, t1, t2, t3) }
   | LBRACKET expr_list RBRACKET { List($2) }

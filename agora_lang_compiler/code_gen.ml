@@ -33,41 +33,42 @@ let opcodes = [
 ]
 
 let emit_opcode buf opcode =
-  Buffer.add_char buf (Char.chr opcode)
+  Buffer.add_string buf (Printf.sprintf "%02x" opcode)
 
 let emit_u256 buf value =
-  for i = 0 to 31 do
-    let byte = (value lsr (8 * (31 - i))) land 0xff in
-    Buffer.add_char buf (Char.chr byte)
-  done
+  let hex_value = Printf.sprintf "%064x" value in
+  Buffer.add_string buf hex_value
 
 let string_to_u256_chunks s =
-  let len = String.length s in
-  let num_chunks = (len + 31) / 32 in
-  let chunks = ref [] in
+  (* convert string to hex representation *)
+  let hex_str = String.concat "" (
+    List.map (fun c -> Printf.sprintf "%02x" (Char.code c))
+    (List.init (String.length s) (String.get s))
+  ) in
   
-  for i = 0 to num_chunks - 1 do
-    let chunk_value = ref 0 in
-    for j = 0 to 31 do
-      let pos = (i * 32) + j in
-      if pos < len then
-        chunk_value := (!chunk_value lsl 8) + Char.code s.[pos]
-      else
-        chunk_value := !chunk_value lsl 8
-    done;
-    chunks := !chunk_value :: !chunks
-  done;
-  List.rev !chunks
-
+  (* split into 64-char chunks, padding each *)
+  let rec to_chunks acc s =
+    if s = "" then List.rev acc
+    else
+      let chunk_size = min 64 (String.length s) in
+      let chunk = String.sub s 0 chunk_size in
+      (* pad this chunk to 64 chars *)
+      let padded_chunk = chunk ^ String.make (64 - chunk_size) '0' in
+      let rest = if chunk_size >= String.length s then ""
+                 else String.sub s chunk_size (String.length s - chunk_size) in
+      to_chunks (padded_chunk :: acc) rest
+  in
+  to_chunks [] hex_str
+  
 let compile_string_hash buf s =
   let chunks = string_to_u256_chunks s in
   List.iter (fun chunk ->
     emit_opcode buf (List.assoc "PUSH" opcodes);
-    emit_u256 buf chunk
+    Buffer.add_string buf chunk
   ) chunks;
   emit_opcode buf (List.assoc "SHA256" opcodes);
   emit_u256 buf (List.length chunks);
-  List.length chunks + 1 (* Return number of instructions generated *)
+  List.length chunks + 1
 
 type storage_var = 
   | StateVar
@@ -134,7 +135,9 @@ let rec compile_expr ctx buf = function
 
   | VarBind (name, _ty, value) -> 
       Hashtbl.add ctx.symbols name StateVar;
+
       compile_expr ctx buf value;
+
       let instr_count = compile_string_hash buf name in
       emit_opcode buf (List.assoc "SET" opcodes);
       ctx.current_offset <- ctx.current_offset + instr_count + 1
@@ -254,6 +257,12 @@ let rec compile_expr ctx buf = function
       compile_expr ctx buf func;
       emit_opcode buf (List.assoc "JUMP" opcodes);
       ctx.current_offset <- ctx.current_offset + 1
+
+  | Publish _ -> ()
+
+  | View _ -> ()
+
+  | Error _ -> ()
 
   | e -> failwith (Printf.sprintf "Not implemented: %s" (string_of_expr e))
 

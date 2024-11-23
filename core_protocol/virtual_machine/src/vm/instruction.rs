@@ -32,8 +32,8 @@ pub enum Instruction {
   Shr { shift: u8 },
 
   // storage Operations
-  Set { key: String },
-  Get { key: String },
+  Set, 
+  Get,
 
   // control Flow Operations
   Jump { destination: usize },
@@ -217,33 +217,12 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
 
       // storage Operations
       0x30 => {
-        if i + 4 > bytecode.len() {
-          return Err("Set instruction expects a key length prefix and key string".to_string());
-        }
-
-        let key_len = bytecode[i + 2] as usize;
-        if i + 3 + key_len > bytecode.len() {
-          return Err("Key length exceeds remaining bytecode length".to_string());
-        }
-
-        let key = String::from_utf8(bytecode[i + 3..i + 3 + key_len].to_vec())
-          .map_err(|_| "Failed to decode key as UTF-8".to_string())?;
-
-        instructions.push(Instruction::Set { key });
-        i += 3 + key_len;
+        instructions.push(Instruction::Set);
+        i += 1;
       }
       0x31 => {
-        if i + 4 > bytecode.len() {
-          return Err("Get instruction expects a key length prefix and key string".to_string());
-        }
-        let key_len = bytecode[i + 2] as usize;
-        if i + 3 + key_len > bytecode.len() {
-          return Err("Key length exceeds remaining bytecode length".to_string());
-        }
-        let key = String::from_utf8(bytecode[i + 3..i + 3 + key_len].to_vec())
-          .map_err(|_| "Failed to decode key as UTF-8".to_string())?;
-        instructions.push(Instruction::Get { key });
-        i += 3 + key_len;
+        instructions.push(Instruction::Get);
+        i += 1;
       }
 
       // control Flow Operations
@@ -632,19 +611,19 @@ mod tests {
 
   #[test]
   fn test_decode_set_instruction() {
-    let program = VM::parse_program_to_bytecode("30 00 04 6a 6f 68 6e").unwrap();
+    let program = VM::parse_program_to_bytecode("30").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Set { key: "john".to_string() }]
+      vec![Instruction::Set]
       );
   }
 
   #[test]
   fn test_decode_get_instruction() {
-    let program = VM::parse_program_to_bytecode("31 00 02 6a 6f").unwrap();
+    let program = VM::parse_program_to_bytecode("31").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Get { key: "jo".to_string() }]
+      vec![Instruction::Get]
       );
   }
 
@@ -824,16 +803,31 @@ mod tests {
   }
 
   #[test]
-    fn test_decode_sha256_function() {
-      let program = VM::parse_program_to_bytecode("
-        43
-        0000000000000000000000000000000000000000000000000000000000000002
-      ").unwrap();
-      assert_eq!(
-        decode_bytecode_to_instruction(&program).unwrap(),
-        vec![Instruction::Sha256 { values: 2 }]
-      );
+  fn test_decode_sha256_function() {
+    let program = VM::parse_program_to_bytecode("
+      43
+      0000000000000000000000000000000000000000000000000000000000000002
+    ").unwrap();
+    assert_eq!(
+      decode_bytecode_to_instruction(&program).unwrap(),
+      vec![Instruction::Sha256 { values: 2 }]
+    );
 
-    }
+  }
+
+  #[test]
+  fn test_test_test() {
+    let program = VM::parse_program_to_bytecode("
+    01000000000000000000000000000000000000000000000000000000000000003201746f74616c5f737570706c790000000000000000000000000000000000000000430000000000000000000000000000000000000000000000000000000000000001300141676f7261436f696e000000000000000000000000000000000000000000000043000000000000000000000000000000000000000000000000000000000000000101746f6b656e5f6e616d650000000000000000000000000000000000000000000043000000000000000000000000000000000000000000000000000000000000000130
+    ").unwrap();
+
+    println!("{:?}", decode_bytecode_to_instruction(&program).unwrap());
+
+    assert_eq!(
+      decode_bytecode_to_instruction(&program).unwrap(),
+      vec![]
+    );
+
+  }
 
 }
