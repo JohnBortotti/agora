@@ -536,9 +536,9 @@ impl VM {
 
         // storage operations
         Instruction::Set => {
-          if let Some(value) = self.stack.pop() {
-            let key = self.stack.pop().unwrap().to_string();
-            self.storage.insert(key.clone(), value);
+          if let Some(key) = self.stack.pop() {
+            let value = self.stack.pop().unwrap();
+            self.storage.insert(key.to_string(), value);
             // println!("[VM] SET {} = {}", key, value);
             self.pc += 1;
             Ok(None)
@@ -1046,8 +1046,8 @@ mod tests {
   #[test]
   fn test_instruction_set() {
     let mut vm = mock_vm();
-    vm.stack.push(U256::from(35 as u64));
     vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(35 as u64));
     let instruction = Instruction::Set; 
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.storage, HashMap::from_iter(vec![("35".to_string(), U256::from(2 as u64))]));

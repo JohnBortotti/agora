@@ -1,5 +1,9 @@
 (*var total_supply: int := 50;*)
 
-event Transfer(int, int, int);
+(*event Transfer(int, int, int);*)
 
-emit Transfer(1, 2, 5)
+(*emit Transfer(1, 2, 5);*)
+
+mapping (int, int) balances;
+
+balances[1] := 50

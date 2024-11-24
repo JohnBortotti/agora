@@ -636,6 +636,5 @@ mod tests {
       decode_bytecode_to_instruction(&program).unwrap(),
       vec![Instruction::Sha256 { values: 2 }]
     );
-
   }
 }
