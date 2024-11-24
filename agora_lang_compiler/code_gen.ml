@@ -222,7 +222,7 @@ let rec compile_expr ctx buf = function
       Hashtbl.add ctx.symbols name (Event [ty1; ty2; ty3])
 
   | Emit (name, e1, e2, e3) ->
-      let types = match Hashtbl.find_opt ctx.symbols name with
+      let _ = match Hashtbl.find_opt ctx.symbols name with
         | Some (Event types) -> types
         | _ -> failwith (Printf.sprintf "Unknown event: %s" name)
       in
@@ -230,20 +230,11 @@ let rec compile_expr ctx buf = function
       compile_expr ctx buf e1;
       compile_expr ctx buf e2;
       compile_expr ctx buf e3;
-      
-      let signature = Printf.sprintf "%s(%s)" name 
-        (String.concat "," (List.map string_of_ty types)) in
-      
-      let instr_count = compile_string_hash buf signature in
-      let name_instr_count = compile_string_hash buf name in
-      
+      let instr_count = compile_string_hash buf name in
+
       emit_opcode buf (List.assoc "EMIT" opcodes);
-      emit_u256 buf 0;  (* topic1 *)
-      emit_u256 buf 0;  (* topic2 *)
-      emit_u256 buf 0;  (* topic3 *)
-      emit_u256 buf 0;  (* data length *)
-      
-      ctx.current_offset <- ctx.current_offset + instr_count + name_instr_count + 5
+
+      ctx.current_offset <- ctx.current_offset + 1 + instr_count
 
   | Abs (arg, _, body) ->
       Hashtbl.add ctx.symbols arg Stack;

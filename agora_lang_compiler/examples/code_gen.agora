@@ -1,3 +1,5 @@
-var total_supply: int := 50;
+(*var total_supply: int := 50;*)
 
-var token_name: string := "AgoraCoin"
+event Transfer(int, int, int);
+
+emit Transfer(1, 2, 5)

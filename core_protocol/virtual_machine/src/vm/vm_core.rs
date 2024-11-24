@@ -738,25 +738,16 @@ impl VM {
         }
         Instruction::Emit => {
           let name = self.stack.pop().unwrap().to_string();
-          let topic1 = self.stack.pop().unwrap();
-          let topic2 = self.stack.pop().unwrap();
           let topic3 = self.stack.pop().unwrap();
-          let data_len = self.stack.pop().unwrap().as_usize();
-          let mut data = Vec::new();
-          for _ in 0..data_len {
-            if let Some(value) = self.stack.pop() {
-              data.push(value.as_u8());
-            } else {
-              return Err("[VM] EMIT failed: insufficient operands on stack".to_string());
-            }
-          }
+          let topic2 = self.stack.pop().unwrap();
+          let topic1 = self.stack.pop().unwrap();
 
           self.overlayed_changeset.events.push(Event {
             name: name.clone(),
             address: self.transaction.receiver.clone(),
             topics: vec![topic1, topic2, topic3],
-            data
           });
+          
           self.pc += 1;
           Ok(None)
         }
@@ -1106,13 +1097,9 @@ mod tests {
   #[test]
   fn test_instruction_emit() {
     let mut vm = mock_vm();
-    vm.stack.push(U256::from(97 as u64));
-    vm.stack.push(U256::from(100 as u64));
-    vm.stack.push(U256::from(2 as u64));
-
-    vm.stack.push(U256::from(3 as u64));
-    vm.stack.push(U256::from(2 as u64));
     vm.stack.push(U256::from(1 as u64));
+    vm.stack.push(U256::from(2 as u64));
+    vm.stack.push(U256::from(3 as u64));
 
     vm.stack.push(U256::from(12345 as u64));
 
@@ -1126,7 +1113,6 @@ mod tests {
         U256::from(2 as u32),
         U256::from(3 as u32),
       ],
-      data: "da".to_string().into(),
     }]);
     assert_eq!(vm.pc, 1);
   }
