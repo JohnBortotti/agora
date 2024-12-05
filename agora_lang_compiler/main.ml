@@ -1,12 +1,3 @@
-(*
-TODO:
-  - [x] event type
-  - [ ] VM change addrs strings to U256 (convert hex)
-  - [ ] hash function (hash strings, event signature)
-  - [ ] opcode emit will hash the event signature
-  - [ ] list, tuple and mapping functions (folds)
-  - [ ] code-gen
-*)
 let () =
   if Array.length Sys.argv <> 2 then
     Printf.eprintf "Usage: %s <filename>\n%!" Sys.argv.(0)
