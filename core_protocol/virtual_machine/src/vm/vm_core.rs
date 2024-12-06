@@ -64,6 +64,7 @@ pub struct Transaction {
   pub signature: String,
 }
 
+#[derive(Debug)]
 pub struct VM {
   pub id: Uuid,
   pub transaction: Transaction,
@@ -566,15 +567,19 @@ impl VM {
           Ok(None)
         }
         Instruction::JumpIf => {
-          if let Some(condition) = self.stack.pop() {
-            if condition != 0 {
-              let destination = self.stack.pop().unwrap().as_usize();
-              // println!("[VM] JUMPIF {}", destination);
-              self.pc = destination;
+          if let Some(destination) = self.stack.pop() {
+            if let Some(condition) = self.stack.pop() {
+              if condition != 0 {
+                let jump_addr = destination.as_usize();
+                // println!("[VM] JUMPIF {}", jump_addr);
+                self.pc = jump_addr;
+              } else {
+                self.pc += 1;
+              }
+              Ok(None)
             } else {
-              self.pc += 1;
+              Err("[VM] JUMPIF failed: insufficient operands on stack".to_string())
             }
-            Ok(None)
           } else {
             Err("[VM] JUMPIF failed: insufficient operands on stack".to_string())
           }
@@ -771,7 +776,7 @@ impl VM {
           self.pc += 1;
           Ok(None)
         }
-        Instruction::GetCallValue => {
+        Instruction::GetCallAmount => {
           // println!("[VM] GETCALLVALUE");
           self.stack.push(self.transaction.amount);
           self.pc += 1;
@@ -790,6 +795,30 @@ impl VM {
         }
         Instruction::GetBlockTimestamp => {
           // println!("[VM] GETBLOCKTIMESTAMP");
+          self.pc += 1;
+          Ok(None)
+        }
+        Instruction::GetCallPayload => {
+          let decoded = hex::decode(&self.transaction.payload).unwrap();
+          let mut values: Vec<U256> = Vec::new();
+          for chunk in decoded.chunks(32) {
+            let mut padded = [0u8; 32];
+            padded[..chunk.len()].copy_from_slice(chunk);
+            let value = U256::from_be_bytes(padded);
+            values.push(value);
+          }
+          // Push in reverse order to maintain stack order
+          for value in values.into_iter().rev() {
+            self.stack.push(value);
+          }
+          self.pc += 1;
+          Ok(None)
+        }
+
+        Instruction::GetCallPayloadSize => {
+          let decoded = hex::decode(&self.transaction.payload).unwrap();
+          let size = decoded.chunks(32).count();
+          self.stack.push(U256::from(size as u64));
           self.pc += 1;
           Ok(None)
         }
@@ -1066,8 +1095,8 @@ mod tests {
   #[test]
   fn test_instruction_jumpif() {
     let mut vm = mock_vm();
-    vm.stack.push(U256::from(19 as u64));
     vm.stack.push(U256::from(1 as u64));
+    vm.stack.push(U256::from(19 as u64));
     let instruction = Instruction::JumpIf;
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.pc, 19);
@@ -1076,8 +1105,8 @@ mod tests {
   #[test]
   fn test_instruction_jumpif_false() {
     let mut vm = mock_vm();
-    vm.stack.push(U256::from(19 as u64));
     vm.stack.push(U256::from(0 as u64));
+    vm.stack.push(U256::from(19 as u64));
     let instruction = Instruction::JumpIf;
     vm.execute_instruction(&instruction).unwrap();
     assert_eq!(vm.pc, 1);
@@ -1135,5 +1164,43 @@ mod tests {
     ];
 
     assert_eq!(vm.stack, expected_stack);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_get_call_payload_empty() {
+    let mut vm = mock_vm();
+    vm.transaction.payload = "".to_string();
+    vm.execute_instruction(&Instruction::GetCallPayload).unwrap();
+
+    assert_eq!(vm.stack.len(), 0);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_get_call_payload_single_value() {
+    let mut vm = mock_vm();
+    vm.transaction.payload = 
+    "0000000000000000000000000000000000000000000000000000000000000002"
+    .to_string();
+
+    vm.execute_instruction(&Instruction::GetCallPayload).unwrap();
+
+    assert_eq!(vm.stack.len(), 1);
+    assert_eq!(vm.stack[0], U256::from(2u64));
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_get_call_payload_multiple_values() {
+    let mut vm = mock_vm();
+    vm.transaction.payload = 
+      "00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002".to_string();
+    vm.execute_instruction(&Instruction::GetCallPayload).unwrap();
+
+    assert_eq!(vm.stack.len(), 2);
+    assert_eq!(vm.stack.pop().unwrap(), U256::from(1u64));
+    assert_eq!(vm.stack.pop().unwrap(), U256::from(2u64));
+    assert_eq!(vm.pc, 1);
   }
 }

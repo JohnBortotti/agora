@@ -54,7 +54,9 @@ pub enum Instruction {
   // TODO: unit tests
   GetBalance,
   GetCaller,
-  GetCallValue,
+  GetCallAmount,
+  GetCallPayload,
+  GetCallPayloadSize,
   GetGasPrice,
   GetBlockNumber,
   GetBlockTimestamp,
@@ -95,12 +97,14 @@ pub fn get_instruction_gas_cost(instruction: &Instruction) -> u32 {
     Instruction::Return => 5,
 
     // environment Operations
-    Instruction::GetBalance { .. } => 6,
+    Instruction::GetBalance { .. } => 10,
     Instruction::GetCaller => 4,
-    Instruction::GetCallValue => 4,
+    Instruction::GetCallAmount => 4,
     Instruction::GetGasPrice => 4,
     Instruction::GetBlockNumber => 4,
     Instruction::GetBlockTimestamp => 4,
+    Instruction::GetCallPayload => 4,
+    Instruction::GetCallPayloadSize => 4
   }
 }
 
@@ -270,7 +274,7 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
         i += 1;
       }
       0x62 => {
-        instructions.push(Instruction::GetCallValue);
+        instructions.push(Instruction::GetCallAmount);
         i += 1;
       }
       0x63 => {
@@ -283,6 +287,14 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
       }
       0x65 => {
         instructions.push(Instruction::GetBlockTimestamp);
+        i += 1;
+      }
+      0x66 => {
+        instructions.push(Instruction::GetCallPayload);
+        i += 1;
+      }
+      0x67 => {
+        instructions.push(Instruction::GetCallPayloadSize);
         i += 1;
       }
 
@@ -595,7 +607,7 @@ mod tests {
     let program = VM::parse_program_to_bytecode("62").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::GetCallValue]
+      vec![Instruction::GetCallAmount]
       );
   }
 
@@ -627,7 +639,7 @@ mod tests {
   }
 
   #[test]
-  fn test_decode_sha256_function() {
+  fn test_decode_sha256_instruction() {
     let program = VM::parse_program_to_bytecode("
       43
       0000000000000000000000000000000000000000000000000000000000000002
@@ -636,5 +648,25 @@ mod tests {
       decode_bytecode_to_instruction(&program).unwrap(),
       vec![Instruction::Sha256 { values: 2 }]
     );
+  }
+
+  #[test]
+  fn test_decode_get_call_payload_instruction() {
+      let program = VM::parse_program_to_bytecode("66").unwrap();
+
+      assert_eq!(
+        decode_bytecode_to_instruction(&program).unwrap(),
+        vec![Instruction::GetCallPayload]
+      );
+  }
+
+  #[test]
+  fn test_decode_get_call_payload_size_instruction() {
+      let program = VM::parse_program_to_bytecode("67").unwrap();
+
+      assert_eq!(
+        decode_bytecode_to_instruction(&program).unwrap(),
+        vec![Instruction::GetCallPayloadSize]
+      );
   }
 }
