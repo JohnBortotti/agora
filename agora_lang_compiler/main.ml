@@ -1,15 +1,16 @@
 let () =
-  if Array.length Sys.argv <> 2 then
-    Printf.eprintf "Usage: %s <filename>\n%!" Sys.argv.(0)
+  if Array.length Sys.argv < 2 then
+    Printf.eprintf "Usage: %s <filename> [--debug]\n%!" Sys.argv.(0)
   else
     let filename = Sys.argv.(1) in
+    let debug = Array.length Sys.argv > 2 && Sys.argv.(2) = "--debug" in
     try
       let channel = open_in filename in
       let lexbuf = Lexing.from_channel channel in
       try
         (* expression parsing *)
         let ast = Parser.main Lexer.read lexbuf in
-        Printf.printf "Parsing passed\n\n";
+        Printf.printf "[x] Parsing Stage passed\n";
         close_in channel;
         (* List.iter (fun expr -> Printf.printf "%s\n\n" (Ast.string_of_expr expr)) ast; *)
 
@@ -32,7 +33,7 @@ let () =
           ) exprs
         in
         type_check_exprs ast;
-        Printf.printf "Type check passed\n\n";
+        Printf.printf "[x] Type check passed\n\n";
 
         (* check duplicated calls for "publish" *)
         List.fold_left (fun acc expr ->
@@ -55,8 +56,11 @@ let () =
         (* TODO: check if functions of "view" are pure *)
 
         let opcode_buf = Buffer.create 256 in
+        let debug_buf = if debug then Buffer.create 1024 else Buffer.create 0 in
         let ctx = Code_gen.create_context () in
-        Code_gen.compile_program ctx opcode_buf ast;
+        Code_gen.compile_program ctx opcode_buf debug_buf ast debug;
+        if debug then
+          print_endline (Buffer.contents debug_buf);
         print_endline (Buffer.contents opcode_buf)
 
       with

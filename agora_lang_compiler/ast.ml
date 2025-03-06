@@ -232,9 +232,9 @@ let rec check_type_expr (env: type_env) (expr: expr) : ty =
       | _ -> failwith "Type error: expected event type")
   (* TODO: check if expressions are type Let_brace(Abs) *)
   | Publish l -> 
-      let t = List.map (fun expr -> check_type_expr env expr) l in
-      let tl = List.hd (List.rev t) in
-      List.iter (fun t' -> check_type tl t') t;
+      (* let t = List.map (fun expr -> check_type_expr env expr) l in *)
+      (* let tl = List.hd (List.rev t) in *)
+      (* List.iter (fun t' -> check_type tl t') t; *)
       TUnit
   (* TODO: check if expressions are type Let_brace(Abs) *)
   | View l -> 

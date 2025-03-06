@@ -11,4 +11,8 @@ let transfer = {
     emit Transfer(from, to, amount)
 };
 
-publish [transfer]
+let get_balance = {
+  \acc: int -> balances[acc]
+};
+
+publish [transfer ; get_balance]
