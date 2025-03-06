@@ -28,30 +28,35 @@ pub enum Instruction {
   BOr,
   BXor,
   BNot,
-  Shl { shift: u8 },
-  Shr { shift: u8 },
+  Shl,
+  Shr,
 
   // storage Operations
-  Set { key: String },
-  Get { key: String },
+  Set, 
+  Get,
 
   // control Flow Operations
-  Jump { destination: usize },
-  JumpIf { destination: usize },
-  Halt { message: String},
+  Jump,
+  JumpIf,
+  Halt,
+  
+  // hash Operations
+  Sha256 { values: u8 }, // values parameter indicates the number of U256 values to hash
 
   // call/message operations
   // TODO: unit tests
-  Call { address: String, gas_limit: U256, amount: U256, payload: String },
-  Transaction { receiver: String, amount: U256 },
-  Emit { event_name: String, topic1: U256, topic2: U256, topic3: U256, data: Vec<u8> },
+  Call,
+  Transaction,
+  Emit,
   Return,
 
   // environment operations
   // TODO: unit tests
-  GetBalance { address: U256 },
+  GetBalance,
   GetCaller,
-  GetCallValue,
+  GetCallAmount,
+  GetCallPayload,
+  GetCallPayloadSize,
   GetGasPrice,
   GetBlockNumber,
   GetBlockTimestamp,
@@ -82,6 +87,9 @@ pub fn get_instruction_gas_cost(instruction: &Instruction) -> u32 {
     Instruction::Jump { .. } | Instruction::JumpIf { .. } => 8,
     Instruction::Halt { .. } => 2,
 
+    // hash Operations
+    Instruction::Sha256 { .. } => 10,
+
     // call/Message Operations
     Instruction::Call { .. } => 10,
     Instruction::Transaction { .. } => 12,
@@ -89,12 +97,14 @@ pub fn get_instruction_gas_cost(instruction: &Instruction) -> u32 {
     Instruction::Return => 5,
 
     // environment Operations
-    Instruction::GetBalance { .. } => 6,
+    Instruction::GetBalance { .. } => 10,
     Instruction::GetCaller => 4,
-    Instruction::GetCallValue => 4,
+    Instruction::GetCallAmount => 4,
     Instruction::GetGasPrice => 4,
     Instruction::GetBlockNumber => 4,
     Instruction::GetBlockTimestamp => 4,
+    Instruction::GetCallPayload => 4,
+    Instruction::GetCallPayloadSize => 4
   }
 }
 
@@ -141,7 +151,6 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
         instructions.push(Instruction::Mod);
         i += 1;
       }
-
       // comparison Operations
       0x10 => {
         instructions.push(Instruction::Eq);
@@ -194,184 +203,61 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
         i += 1;
       }
       0x24 => {
-        if i + 1 >= bytecode.len() {
-          return Err("Shl instruction expects a shift value".to_string());
-        }
-        let shift = bytecode[i + 1];
-        instructions.push(Instruction::Shl { shift });
-        i += 2;
+        instructions.push(Instruction::Shl);
+        i += 1;
       }
       0x25 => {
-        if i + 1 >= bytecode.len() {
-          return Err("Shr instruction expects a shift value".to_string());
-        }
-        let shift = bytecode[i + 1];
-        instructions.push(Instruction::Shr { shift });
-        i += 2;
+        instructions.push(Instruction::Shr);
+        i += 1;
       }
 
       // storage Operations
       0x30 => {
-        if i + 4 > bytecode.len() {
-          return Err("Set instruction expects a key length prefix and key string".to_string());
-        }
-
-        let key_len = bytecode[i + 2] as usize;
-        if i + 3 + key_len > bytecode.len() {
-          return Err("Key length exceeds remaining bytecode length".to_string());
-        }
-
-        let key = String::from_utf8(bytecode[i + 3..i + 3 + key_len].to_vec())
-          .map_err(|_| "Failed to decode key as UTF-8".to_string())?;
-
-        instructions.push(Instruction::Set { key });
-        i += 3 + key_len;
+        instructions.push(Instruction::Set);
+        i += 1;
       }
       0x31 => {
-        if i + 4 > bytecode.len() {
-          return Err("Get instruction expects a key length prefix and key string".to_string());
-        }
-        let key_len = bytecode[i + 2] as usize;
-        if i + 3 + key_len > bytecode.len() {
-          return Err("Key length exceeds remaining bytecode length".to_string());
-        }
-        let key = String::from_utf8(bytecode[i + 3..i + 3 + key_len].to_vec())
-          .map_err(|_| "Failed to decode key as UTF-8".to_string())?;
-        instructions.push(Instruction::Get { key });
-        i += 3 + key_len;
+        instructions.push(Instruction::Get);
+        i += 1;
       }
 
       // control Flow Operations
       0x40 => {
-        if i + 4 >= bytecode.len() {
-          return Err("Jump instruction expects a 4-byte destination".to_string());
-        }
-        let destination = usize::from_be_bytes([0, 0, 0, 0, bytecode[i + 1], bytecode[i + 2], bytecode[i + 3], bytecode[i + 4]]);
-        instructions.push(Instruction::Jump { destination });
-        i += 5;
+        instructions.push(Instruction::Jump);
+        i += 1;
       }
       0x41 => {
-        if i + 4 >= bytecode.len() {
-          return Err("JumpIf instruction expects a 4-byte destination".to_string());
-        }
-        let destination = usize::from_be_bytes([0, 0, 0, 0, bytecode[i + 1], bytecode[i + 2], bytecode[i + 3], bytecode[i + 4]]);
-        instructions.push(Instruction::JumpIf { destination });
-        i += 5;
+        instructions.push(Instruction::JumpIf);
+        i += 1;
       }
       0x42 => {
-        if i + 2 >= bytecode.len() {
-          return Err("Halt instruction expects a message length and message data".to_string());
-        }
-
-        let message_len = bytecode[i + 1] as usize;
-        if i + 2 + message_len > bytecode.len() {
-          return Err("Message length exceeds remaining bytecode length".to_string());
-        }
-
-        let message = String::from_utf8(bytecode[i + 2..i + 2 + message_len].to_vec())
-          .map_err(|_| "Failed to decode event name as UTF-8".to_string())?;
-        i += 2 + message_len;
-
-        instructions.push(Instruction::Halt{message});
+        instructions.push(Instruction::Halt);
         i += 1;
+      }
+      
+      // hash Operations
+      0x43 => {
+        if i + 1 >= bytecode.len() {
+          return Err("Sha256 instruction expects a length".to_string());
+        }
+
+        let values = bytecode[i + 32];
+        instructions.push(Instruction::Sha256 { values });
+        i += 33;
       }
 
       // call/Message Operations
       0x50 => {
-        if i + 99 > bytecode.len() {
-          return Err("Call instruction expects address (32 bytes), gas limit (32 bytes), amount (32 bytes), and payload length (2 bytes)".to_string());
-        }
-
-        // decode the 32-byte address.
-        let address_bytes = &bytecode[i + 1..i + 33];
-        let address_str = format!("{}", hex::encode(address_bytes));
-
-        // decode the 32-byte gas limit.
-        let gas_limit = U256::from_be_bytes(bytecode[i + 33..i + 65].try_into()
-          .map_err(|_| "Invalid gas limit".to_string())?);
-
-        // decode the 32-byte amount.
-        let amount = U256::from_be_bytes(bytecode[i + 65..i + 97].try_into()
-          .map_err(|_| "Invalid amount".to_string())?);
-
-        // payload length (2 bytes)
-        let payload_len = u16::from_be_bytes([bytecode[i + 97], bytecode[i + 98]]) as usize;
-
-        if i + 99 + payload_len > bytecode.len() {
-          return Err("Payload length exceeds remaining bytecode length".to_string());
-        }
-
-        // decode the payload as a UTF-8 string if it exists.
-        let payload = if payload_len > 0 {
-          String::from_utf8(bytecode[i + 99..i + 99 + payload_len].to_vec())
-            .map_err(|_| "Failed to decode payload as UTF-8".to_string())?
-        } else {
-          String::new()
-        };
-
-        instructions.push(Instruction::Call { address: address_str, gas_limit, amount, payload });
-
-        i += 99 + payload_len;
+        instructions.push(Instruction::Call);
+        i += 1;
       },
       0x70 => {
-        if i + 3 > bytecode.len() {
-          return Err("Emit instruction expects an event name length prefix and event data".to_string());
-        }
-
-        let name_len = bytecode[i + 2] as usize;
-
-        if i + 3 + name_len > bytecode.len() {
-          return Err("Event name length exceeds remaining bytecode length".to_string());
-        }
-
-        let event_name = String::from_utf8(bytecode[i + 3..i + 3 + name_len].to_vec())
-          .map_err(|_| "Failed to decode event name as UTF-8".to_string())?;
-        i += 3 + name_len;
-
-        if i + 96 > bytecode.len() {
-          return Err("Not enough bytes for the 3 topics".to_string());
-        }
-
-        // get 3 topics (can be empty => 0x0)
-        let topic1 = U256::from_be_bytes(bytecode[i..i + 32].try_into().unwrap());
-        let topic2 = U256::from_be_bytes(bytecode[i + 32..i + 64].try_into().unwrap());
-        let topic3 = U256::from_be_bytes(bytecode[i + 64..i + 96].try_into().unwrap());
-        i += 96;
-
-        // read data len 
-        if i + 2 > bytecode.len() {
-          return Err("Not enough bytes for data length".to_string());
-        }
-
-        let data_len = u16::from_be_bytes([bytecode[i], bytecode[i + 1]]) as usize;
-        i += 2;
-
-        let data = if data_len > 0 {
-          if i + data_len > bytecode.len() {
-            return Err("Data length exceeds remaining bytecode length".to_string());
-          }
-          bytecode[i..i + data_len].to_vec()
-        } else {
-          vec![]
-        };
-
-        instructions.push(Instruction::Emit { event_name, topic1, topic2, topic3, data }); 
-
-        i += data_len;
+        instructions.push(Instruction::Emit); 
+        i += 1;
       },
       0x51 => {
-        if i + 36 >= bytecode.len() {
-          return Err("Transaction instruction expects sender, receiver, and amount".to_string());
-        }
-
-        let receiver_bytes = &bytecode[i + 1..i + 33];
-        let receiver_str = format!("{}", hex::encode(receiver_bytes));
-        // let receiver = U256::from_be_bytes(bytecode[i + 1..i + 33].try_into().unwrap());
-        let amount = U256::from_be_bytes(bytecode[i + 33..i + 65].try_into().unwrap());
-
-        instructions.push(Instruction::Transaction { receiver: receiver_str, amount });
-
-        i += 65;
+        instructions.push(Instruction::Transaction);
+        i += 1;
       }
       0x52 => {
         instructions.push(Instruction::Return);
@@ -380,19 +266,15 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
 
       // environment Operations
       0x60 => {
-        if i + 32 > bytecode.len() {
-          return Err("GetBalance expects a 32-byte (U256) address".to_string());
-        }
-        let address = U256::from_be_bytes(bytecode[i + 1..i + 33].try_into().unwrap());
-        instructions.push(Instruction::GetBalance { address });
-        i += 33;
+        instructions.push(Instruction::GetBalance);
+        i += 1;
       }
       0x61 => {
         instructions.push(Instruction::GetCaller);
         i += 1;
       }
       0x62 => {
-        instructions.push(Instruction::GetCallValue);
+        instructions.push(Instruction::GetCallAmount);
         i += 1;
       }
       0x63 => {
@@ -405,6 +287,14 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
       }
       0x65 => {
         instructions.push(Instruction::GetBlockTimestamp);
+        i += 1;
+      }
+      0x66 => {
+        instructions.push(Instruction::GetCallPayload);
+        i += 1;
+      }
+      0x67 => {
+        instructions.push(Instruction::GetCallPayloadSize);
         i += 1;
       }
 
@@ -598,143 +488,91 @@ mod tests {
 
   #[test]
   fn test_decode_shl_instruction() {
-    let program = VM::parse_program_to_bytecode("24 02").unwrap();
+    let program = VM::parse_program_to_bytecode("24").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Shl { shift: 2 }]
+      vec![Instruction::Shl]
       );
   }
 
   #[test]
   fn test_decode_shr_instruction() {
-    let program = VM::parse_program_to_bytecode("25 03").unwrap();
+    let program = VM::parse_program_to_bytecode("25").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Shr { shift: 3 }]
+      vec![Instruction::Shr]
       );
   }
 
   #[test]
   fn test_decode_set_instruction() {
-    let program = VM::parse_program_to_bytecode("30 00 04 6a 6f 68 6e").unwrap();
+    let program = VM::parse_program_to_bytecode("30").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Set { key: "john".to_string() }]
+      vec![Instruction::Set]
       );
   }
 
   #[test]
   fn test_decode_get_instruction() {
-    let program = VM::parse_program_to_bytecode("31 00 02 6a 6f").unwrap();
+    let program = VM::parse_program_to_bytecode("31").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Get { key: "jo".to_string() }]
+      vec![Instruction::Get]
       );
   }
 
   #[test]
   fn test_decode_jump_instruction() {
-    let program = VM::parse_program_to_bytecode("40 00 00 00 0a").unwrap();
+    let program = VM::parse_program_to_bytecode("40").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Jump { destination: 10 }]
+      vec![Instruction::Jump]
       );
   }
 
   #[test]
   fn test_decode_jump_if_instruction() {
-    let program = VM::parse_program_to_bytecode("41 00 00 00 0a").unwrap();
+    let program = VM::parse_program_to_bytecode("41").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::JumpIf { destination: 10 }]
+      vec![Instruction::JumpIf]
       );
   }
 
   #[test]
   fn test_decode_halt_instruction() {
-    let program = VM::parse_program_to_bytecode("42 03 66 6f 6f").unwrap();
+    let program = VM::parse_program_to_bytecode("42").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Halt { message: "foo".to_string() }]
+      vec![Instruction::Halt]
       );
   }
 
   #[test]
   fn test_decode_call_instruction() {
-    let program = VM::parse_program_to_bytecode("
-      50
-      4d8bbd4e450f1f604139b50fd0fdbebe662e7e17350fd2b31359d7b49c388a50
-      0000000000000000000000000000000000000000000000000000000000000023
-      0000000000000000000000000000000000000000000000000000000000000000
-      00 00
-    ").unwrap();
+    let program = VM::parse_program_to_bytecode("50").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Call {
-        address: "4d8bbd4e450f1f604139b50fd0fdbebe662e7e17350fd2b31359d7b49c388a50".to_string(),
-        gas_limit: 35u32.into(),
-        amount: 0u32.into(),
-        payload: "".to_string()
-      }]
+      vec![Instruction::Call]
       );
   }     
 
   #[test]
   fn test_decode_transaction_instruction() {
-    let program = VM::parse_program_to_bytecode("
-      51
-      5d8bbd4e450f1f604139b50fd0fdbabc662e7e17350fd2b31359d7b49c388a21
-      0000000000000000000000000000000000000000000000000000000000000002
-      ").unwrap();
+    let program = VM::parse_program_to_bytecode("51").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Transaction {
-        receiver: "5d8bbd4e450f1f604139b50fd0fdbabc662e7e17350fd2b31359d7b49c388a21".to_string(),
-        amount: 2u32.into()
-      }]
+      vec![Instruction::Transaction]
       );
   }
 
   #[test]
   fn test_decode_emit_instruction() {
-    let program = VM::parse_program_to_bytecode("
-      70
-      00 03 66 6f 6f
-      0000000000000000000000000000000000000000000000000000000000000002
-      0000000000000000000000000000000000000000000000000000000000000002
-      0000000000000000000000000000000000000000000000000000000000000002
-      00 00
-    ").unwrap();
+    let program = VM::parse_program_to_bytecode("70").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Emit {
-        event_name: "foo".to_string(),
-        topic1: 2u32.into(),
-        topic2: 2u32.into(),
-        topic3: 2u32.into(),
-        data: vec![]
-      }]);
-  }
-
-  #[test]
-  fn test_decode_emit_instruction_with_data() {
-    let program = VM::parse_program_to_bytecode("
-      70
-      00 03 66 6f 6f
-      0000000000000000000000000000000000000000000000000000000000000002
-      0000000000000000000000000000000000000000000000000000000000000003
-      0000000000000000000000000000000000000000000000000000000000000002
-      00 02 aa aa
-    ").unwrap();
-    assert_eq!(
-      decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::Emit {
-        event_name: "foo".to_string(),
-        topic1: 2u32.into(),
-        topic2: 3u32.into(),
-        topic3: 2u32.into(),
-        data: vec![170, 170]
-      }]);
+      vec![Instruction::Emit]);
   }
 
   #[test]
@@ -748,17 +586,10 @@ mod tests {
 
   #[test]
   fn test_decode_get_balance_instruction() {
-    let program = VM::parse_program_to_bytecode("
-      60
-      5d8bbd4e450f1f604139b50fd0fdbabc662e7e17350fd2b31359d7b49c388a21
-    ").unwrap();
+    let program = VM::parse_program_to_bytecode("60").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::GetBalance {
-        address: U256::from_str_hex(
-         "0x5d8bbd4e450f1f604139b50fd0fdbabc662e7e17350fd2b31359d7b49c388a21"
-        ).unwrap()
-      }]
+      vec![Instruction::GetBalance]
       );
   }
 
@@ -776,7 +607,7 @@ mod tests {
     let program = VM::parse_program_to_bytecode("62").unwrap();
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
-      vec![Instruction::GetCallValue]
+      vec![Instruction::GetCallAmount]
       );
   }
 
@@ -804,6 +635,38 @@ mod tests {
     assert_eq!(
       decode_bytecode_to_instruction(&program).unwrap(),
       vec![Instruction::GetBlockTimestamp]
+      );
+  }
+
+  #[test]
+  fn test_decode_sha256_instruction() {
+    let program = VM::parse_program_to_bytecode("
+      43
+      0000000000000000000000000000000000000000000000000000000000000002
+    ").unwrap();
+    assert_eq!(
+      decode_bytecode_to_instruction(&program).unwrap(),
+      vec![Instruction::Sha256 { values: 2 }]
+    );
+  }
+
+  #[test]
+  fn test_decode_get_call_payload_instruction() {
+      let program = VM::parse_program_to_bytecode("66").unwrap();
+
+      assert_eq!(
+        decode_bytecode_to_instruction(&program).unwrap(),
+        vec![Instruction::GetCallPayload]
+      );
+  }
+
+  #[test]
+  fn test_decode_get_call_payload_size_instruction() {
+      let program = VM::parse_program_to_bytecode("67").unwrap();
+
+      assert_eq!(
+        decode_bytecode_to_instruction(&program).unwrap(),
+        vec![Instruction::GetCallPayloadSize]
       );
   }
 }

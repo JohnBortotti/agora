@@ -6,5 +6,4 @@ pub struct Event {
   pub name: String,
   pub address: String,
   pub topics: Vec<U256>,
-  pub data: Vec<u8>,
 }

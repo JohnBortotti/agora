@@ -1,0 +1,18 @@
+(*var total_supply: int := 50;*)
+
+event Transfer(string, string, int);
+
+(*emit Transfer(1, 2, 5);*)
+
+mapping (int, int) balances;
+
+let transfer = {
+  \from: string -> \to: string -> \amount: int ->
+    emit Transfer(from, to, amount)
+};
+
+let get_balance = {
+  \acc: int -> balances[acc]
+};
+
+publish [transfer ; get_balance]
