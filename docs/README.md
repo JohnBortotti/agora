@@ -1,38 +1,85 @@
-# setup
+# Agora Documentation
 
-## node/peer
+## Setup Instructions
 
-1. go to `/core_protocol/database` and run `cargo build --release`
-2. go to `/core_protocol/virtual_machine` and run `cargo build --release`
-3. go to `/core_protocol/` and run containers with `docker compose up`
- 
-## node explorer
+### Core Protocol
 
-1. go to `/explorer/` and run container with `docker compose up`
+1. Database setup:
+   ```bash
+   cd /core_protocol/database
+   cargo build --release
+   ```
 
-# core protocol
+2. Virtual Machine setup:
+   ```bash
+   cd /core_protocol/virtual_machine
+   cargo build --release
+   ```
 
-- **node/peer**: each node maintais its own copy of the blockchain state and interact with others nodes to reach consensus.
+3. Start the Core Protocol containers:
+   ```bash
+   cd /core_protocol/
+   docker compose up
+   ```
 
-- **consensus mechanism (proof-of-work)**: nodes mine new blocks by solving computational puzzles, ensuring consensus across the network.
+### Node Explorer
 
-- every action in the protocol is triggered by a **transaction**:
-  - **normal currency transaction**: transfers funds from one address to another.
-  - **contract creation**: deploys a new smart contract.
-  - **contract execution**: executes functions of a deployed smart contract.
+1. Start the Explorer container:
+   ```bash
+   cd /explorer/
+   docker compose up
+   ```
 
-## state
+### Agora Language Compiler
 
-each state (global_state, receipts, storage/contract) is mantained as a pair of in-memory and on-disk data structure:
-  - the in-memory structure is a custom merkle-patricia-trie
-  - the on-disk structure is a key-value database implemented at `/core_protocol/database`
+1. Build the compiler:
+   ```bash
+   cd /agora_lang_compiler/
+   make
+   ```
 
-this structure allows for easy and fast write/lookup on the trie (in-memory) and enables state reversion using the database.
+2. Compile an Agora smart contract:
+   ```bash
+   ./main examples/your_contract.agora
+   ```
 
-* both the database and virtual_machine are implemented in Rust, and exposed as library via FFI
+## Architecture
 
-## virtual_machine
+### Core Protocol
 
-- virtual machine executions are handled by a **server** module, wich is responsible to spawn VMs and handle data requests from chain (like getting and address state, or fetching contract's storage)
+- **Node/Peer**: Each node maintains its own copy of the blockchain state and interacts with other nodes to reach consensus.
 
-- the virtual machine core is implemented as a **state machine**, this design allows it to request data and be polled by the server in a synchronous and single-threaded manner, which is required to avoid issues with FFI.
+- **Consensus Mechanism (Proof-of-Work)**: Nodes mine new blocks by solving computational puzzles, ensuring consistency across the network.
+
+- **Transactions**: Every action in the protocol is triggered by a transaction:
+  - **Normal Currency Transaction**: Transfers funds from one address to another.
+  - **Contract Creation**: Deploys a new smart contract.
+  - **Contract Execution**: Executes functions of a deployed smart contract.
+
+### State Management
+
+The protocol maintains several states (global_state, receipts, storage/contract) as a pair of in-memory and on-disk data structures:
+  - **In-memory Structure**: A custom Merkle-Patricia-Trie for efficient operations
+  - **On-disk Structure**: A key-value database implemented at `/core_protocol/database`
+
+This dual structure allows for:
+  - Fast write/lookup operations on the trie (in-memory)
+  - State reversion capabilities using the database
+  - Efficient proof generation for verification
+
+> Note: Both the database and virtual machine are implemented in Rust and exposed as libraries via FFI.
+
+### Virtual Machine
+
+- **Server Module**: Responsible for spawning VM instances and handling data requests from the chain (such as address state or contract storage).
+
+- **State Machine Design**: The VM core is implemented as a state machine, allowing it to request data and be polled by the server synchronously and in a single-threaded manner. This design is crucial for reliable FFI interaction.
+
+### Agora Language Compiler
+
+The compiler transforms Agora smart contract language into bytecode for the virtual machine:
+
+- **Lexer**: Performs lexical analysis to convert source code into tokens
+- **Parser**: Builds abstract syntax tree (AST) from tokens
+- **AST**: Defines the hierarchical structure of the program
+- **Code Generator**: Produces executable bytecode for the virtual machine
