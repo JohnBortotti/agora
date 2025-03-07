@@ -1,17 +1,3 @@
-(*
-TODO:
-  - [ ] agora lang compiler
-    - [ ] function dispatcher "ABI"
-  - [ ] contracts
-    - [ ] persistent storage
-    - [ ] bloom filter to track events
-  - [ ] node
-    - [ ] endpoint to get events
-    - [ ] fixes
-      - [ ] optimize block broadcasting (get rid of cyclical requests)
-      - [ ] singleton secp256k1 context
- *)
-
 open Agora_core.Node
 
 let get_env_var var_name =

@@ -23,6 +23,16 @@ check out [docs](./docs/README.md)
 
 ## TODO
 
-- [ ] compiler
-    - [ ] finish ABI dispatcher (read payload data)
-    - [ ] implement contract storage (mappings)
+### Lang Compiler
+- [ ] Function dispatcher (ABI)
+  - [ ] Read payload data
+  - [ ] Mappings (storage read/write)
+
+### Smart Contracts
+- [ ] Persistent storage
+- [ ] Add bloom filter to track events
+
+### Node
+- [ ] Optimizations and fixes
+  - [ ] Optimize block broadcasting (remove cyclical requests)
+  - [ ] Implement singleton secp256k1 context
