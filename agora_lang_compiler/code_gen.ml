@@ -64,6 +64,7 @@ let opcodes = [
   ("CALL", 0x53);
   ("STORE", 0x54);
   ("LOAD", 0x55);
+  ("GET_CALL_PAYLOAD", 0x66);
 ]
 
 let emit_opcode ctx buf debug_buf debug opcode =
@@ -148,9 +149,8 @@ let make_function_signature name expr =
 let generate_dispatcher ctx buf debug_buf debug: int =
   let instruction_count = ref 0 in
 
-  (* Push function selector *)
-  emit_opcode ctx buf debug_buf debug (List.assoc "PUSH" opcodes);
-  emit_u256 ctx buf debug_buf debug 0;  (* Will be replaced with actual selector *)
+  (* Get function selector from payload *)
+  emit_opcode ctx buf debug_buf debug (List.assoc "GET_CALL_PAYLOAD" opcodes);
   incr instruction_count;
 
   List.iter (fun func ->
@@ -307,10 +307,12 @@ let rec compile_expr ctx buf debug_buf debug = function
           | Emit (name, _, _, _) -> Buffer.add_string debug_buf (Printf.sprintf "%s// Emitting event: %s\n" (indent ctx.scope_depth) name)
           | _ -> ()
       ) body;
+
+      emit_opcode ctx buf debug_buf debug (List.assoc "RETURN" opcodes);
       ctx.scope_depth <- ctx.scope_depth - 1;
+      
       if debug then
         Buffer.add_string debug_buf (Printf.sprintf "%s}\n" (indent ctx.scope_depth));
-      emit_opcode ctx buf debug_buf debug (List.assoc "RETURN" opcodes);
       ctx.current_offset <- ctx.current_offset + 1
 
   | If (cond, then_branch, else_branch) ->
