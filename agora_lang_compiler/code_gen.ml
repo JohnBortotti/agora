@@ -186,21 +186,19 @@ let generate_dispatcher ctx buf debug_buf debug: int =
 let rec compile_expr ctx buf debug_buf debug = function
   | Int n ->
       if debug then
-        Buffer.add_string debug_buf (Printf.sprintf "// Pushing integer: %d\n" n);
+        Buffer.add_string debug_buf (Printf.sprintf "%s// Pushing integer: %d\n" (indent ctx.scope_depth) n);
       emit_opcode ctx buf debug_buf debug (List.assoc "PUSH" opcodes);
       emit_u256 ctx buf debug_buf debug n;
       ctx.current_offset <- ctx.current_offset + 1
 
   | Bool b ->
       if debug then
-        Buffer.add_string debug_buf (Printf.sprintf "// Pushing boolean: %b\n" b);
+        Buffer.add_string debug_buf (Printf.sprintf "%s// Pushing boolean: %b\n" (indent ctx.scope_depth) b);
       emit_opcode ctx buf debug_buf debug (List.assoc "PUSH" opcodes);
       emit_u256 ctx buf debug_buf debug (if b then 1 else 0);
       ctx.current_offset <- ctx.current_offset + 1
 
   | String s ->
-      if debug then
-        Buffer.add_string debug_buf (Printf.sprintf "// Pushing string: %s\n" s);
       let instr_count = compile_string_hash ctx buf debug_buf debug s in
       ctx.current_offset <- ctx.current_offset + instr_count
 
@@ -307,7 +305,7 @@ let rec compile_expr ctx buf debug_buf debug = function
           match expr with
           | Int n -> Buffer.add_string debug_buf (Printf.sprintf "%s// Pushing integer: %d\n" (indent ctx.scope_depth) n)
           | Bool b -> Buffer.add_string debug_buf (Printf.sprintf "%s// Pushing boolean: %b\n" (indent ctx.scope_depth) b)
-          | String s -> Buffer.add_string debug_buf (Printf.sprintf "%s// Computing SHA256 hash for string: %s\n" (indent ctx.scope_depth) s)
+          | String s -> Buffer.add_string debug_buf (Printf.sprintf "%s// Pushing string: %s\n" (indent ctx.scope_depth) s)
           | Var name -> Buffer.add_string debug_buf (Printf.sprintf "%s// Accessing variable: %s\n" (indent ctx.scope_depth) name)
           | Emit (name, _, _, _) -> Buffer.add_string debug_buf (Printf.sprintf "%s// Emitting event: %s\n" (indent ctx.scope_depth) name)
           | _ -> ()
@@ -388,7 +386,6 @@ let rec compile_expr ctx buf debug_buf debug = function
       if debug then
         Buffer.add_string debug_buf (Printf.sprintf "%s// Defining event: %s\n" (indent ctx.scope_depth) name);
       Hashtbl.add ctx.symbols name (Event [ty1; ty2; ty3])
-
   | Emit (name, e1, e2, e3) ->
       if debug then
         Buffer.add_string debug_buf (Printf.sprintf "%s// Emitting event: %s\n" (indent ctx.scope_depth) name);
@@ -396,9 +393,18 @@ let rec compile_expr ctx buf debug_buf debug = function
         | Some (Event types) -> types
         | _ -> failwith (Printf.sprintf "Unknown event: %s" name)
       in
+      (* debugging: Check evaluation of e1, e2, e3, and name *)
+      if debug then
+        Buffer.add_string debug_buf (Printf.sprintf "%s// Evaluating topic 1\n" (indent ctx.scope_depth));
       compile_expr ctx buf debug_buf debug e1;
+      if debug then
+        Buffer.add_string debug_buf (Printf.sprintf "%s// Evaluating topic 2\n" (indent ctx.scope_depth));
       compile_expr ctx buf debug_buf debug e2;
+      if debug then
+        Buffer.add_string debug_buf (Printf.sprintf "%s// Evaluating topic 3\n" (indent ctx.scope_depth));
       compile_expr ctx buf debug_buf debug e3;
+      if debug then
+        Buffer.add_string debug_buf (Printf.sprintf "%s// Evaluating event name\n" (indent ctx.scope_depth));
       let instr_count = compile_string_hash ctx buf debug_buf debug name in
       emit_opcode ctx buf debug_buf debug (List.assoc "EMIT" opcodes);
       ctx.current_offset <- ctx.current_offset + 1 + instr_count

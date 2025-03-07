@@ -189,7 +189,7 @@ fn print_help() {
     println!("  breakpoint (b) <pc> - Set breakpoint at program counter");
     println!("  delbreak (db) <pc>  - Remove breakpoint");
     println!("  breaks              - List all breakpoints");
-    println!("  stack               - Show current stack contents");
+    println!("  stack (st)          - Show current stack contents");
     println!("  memory              - Show memory contents");
     println!("  storage             - Show storage contents");
     println!("  pc                  - Show current program counter");
@@ -306,7 +306,7 @@ fn main() {
                         }
                         println!(""); // Empty line for better readability
                     },
-                    "stack" => {
+                    "stack" | "st" => {
                         println!("\n=== Stack ===");
                         if debugger.vm.stack.is_empty() {
                             println!("  <empty>");
