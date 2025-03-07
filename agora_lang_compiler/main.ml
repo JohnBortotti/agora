@@ -10,7 +10,6 @@ let () =
       try
         (* expression parsing *)
         let ast = Parser.main Lexer.read lexbuf in
-        Printf.printf "[x] Parsing Stage passed\n";
         close_in channel;
         (* List.iter (fun expr -> Printf.printf "%s\n\n" (Ast.string_of_expr expr)) ast; *)
 
@@ -33,7 +32,6 @@ let () =
           ) exprs
         in
         type_check_exprs ast;
-        Printf.printf "[x] Type check passed\n\n";
 
         (* check duplicated calls for "publish" *)
         List.fold_left (fun acc expr ->

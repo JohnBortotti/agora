@@ -305,6 +305,16 @@ impl VM {
             Err("[VM] POP failed: stack is empty".to_string())
           }
         }
+        Instruction::Copy => {
+          if let Some(value) = self.stack.last() {
+            self.stack.push(*value);
+            // println!("[VM] COPY {}", value);
+            self.pc += 1;
+            Ok(None)
+          } else {
+            Err("[VM] COPY failed: stack is empty".to_string())
+          }
+        }
 
         // arithmetic operations
         Instruction::Add => {
@@ -1202,5 +1212,23 @@ mod tests {
     assert_eq!(vm.stack.pop().unwrap(), U256::from(1u64));
     assert_eq!(vm.stack.pop().unwrap(), U256::from(2u64));
     assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_copy() {
+    let mut vm = mock_vm();
+    vm.stack.push(U256::from(42 as u64));
+    let instruction = Instruction::Copy;
+    vm.execute_instruction(&instruction).unwrap();
+    assert_eq!(vm.stack, vec![U256::from(42 as u64), U256::from(42 as u64)]);
+    assert_eq!(vm.pc, 1);
+  }
+
+  #[test]
+  fn test_instruction_copy_empty_stack() {
+    let mut vm = mock_vm();
+    let instruction = Instruction::Copy;
+    let result = vm.execute_instruction(&instruction);
+    assert_eq!(result, Err("[VM] COPY failed: stack is empty".to_string()));
   }
 }

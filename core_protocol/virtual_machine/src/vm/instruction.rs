@@ -5,6 +5,7 @@ pub enum Instruction {
   // stack Operations
   Push { value: U256 },
   Pop,
+  Copy,
 
   // arithmetic Operations
   Add,
@@ -64,12 +65,13 @@ pub enum Instruction {
 
 pub fn get_instruction_gas_cost(instruction: &Instruction) -> u32 {
   match instruction {
+    // stack Operations
+    Instruction::Push { .. } | Instruction::Pop => 2,
+    Instruction::Copy => 3,
+
     // arithmetic Operations
     Instruction::Add | Instruction::Sub | Instruction::Mul 
     | Instruction::Div | Instruction::Mod => 3,
-
-    // stack Operations
-    Instruction::Push { .. } | Instruction::Pop => 2,
 
     // comparison Operations
     Instruction::Eq | Instruction::Ne | Instruction::Lt 
@@ -127,6 +129,10 @@ pub fn decode_bytecode_to_instruction(bytecode: &[u8]) -> Result<Vec<Instruction
       }
       0x02 => {
         instructions.push(Instruction::Pop);
+        i += 1;
+      }
+      0x08 => {
+        instructions.push(Instruction::Copy);
         i += 1;
       }
 
@@ -668,5 +674,14 @@ mod tests {
         decode_bytecode_to_instruction(&program).unwrap(),
         vec![Instruction::GetCallPayloadSize]
       );
+  }
+
+  #[test]
+  fn test_decode_copy_instruction() {
+    let program = VM::parse_program_to_bytecode("08").unwrap();
+    assert_eq!(
+      decode_bytecode_to_instruction(&program).unwrap(),
+      vec![Instruction::Copy]
+    );
   }
 }

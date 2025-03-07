@@ -34,6 +34,7 @@ let create_context () = {
 let opcodes = [
   ("PUSH", 0x01);
   ("POP", 0x02);
+  ("COPY", 0x08);
   ("ADD", 0x03);
   ("SUB", 0x04);
   ("MUL", 0x05);
@@ -154,6 +155,10 @@ let generate_dispatcher ctx buf debug_buf debug: int =
   incr instruction_count;
 
   List.iter (fun func ->
+    (* Copy the function selector for comparison *)
+    emit_opcode ctx buf debug_buf debug (List.assoc "COPY" opcodes);
+    incr instruction_count;
+
     (* Push function hash *)
     emit_opcode ctx buf debug_buf debug (List.assoc "PUSH" opcodes);
     Buffer.add_string buf func.hash;
@@ -401,14 +406,14 @@ let rec compile_expr ctx buf debug_buf debug = function
   | Abs (arg, _, body) ->
       Hashtbl.add ctx.symbols arg Stack;
       List.iter (compile_expr ctx buf debug_buf debug) body;
-      emit_opcode ctx buf debug_buf debug (List.assoc "RETURN" opcodes);
-      ctx.current_offset <- ctx.current_offset + 1;
       Hashtbl.remove ctx.symbols arg
 
   | App (func, arg) ->
       compile_expr ctx buf debug_buf debug arg;
       compile_expr ctx buf debug_buf debug func;
       emit_opcode ctx buf debug_buf debug (List.assoc "CALL" opcodes);
+      ctx.current_offset <- ctx.current_offset + 1;
+      emit_opcode ctx buf debug_buf debug (List.assoc "RETURN" opcodes);
       ctx.current_offset <- ctx.current_offset + 1
 
   | Publish expr_l ->
@@ -465,6 +470,10 @@ let rec compile_expr ctx buf debug_buf debug = function
       ctx.scope_depth <- ctx.scope_depth - 1;
       if debug then
         Buffer.add_string debug_buf (Printf.sprintf "%s}\n" (indent ctx.scope_depth));
+
+      (* Add HALT at the end of the entry point function *)
+      emit_opcode ctx buf debug_buf debug (List.assoc "HALT" opcodes);
+      ctx.current_offset <- ctx.current_offset + 1;
 
   | e -> failwith (Printf.sprintf "Not implemented: %s" (string_of_expr e))
 

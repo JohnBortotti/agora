@@ -25,10 +25,10 @@ impl VMDebugger {
                 sender: String::new(),
                 receiver: String::new(),
                 amount: U256::from(0 as u8),
-                gas_limit: U256::from(u64::MAX), // Set high gas limit for debugging
+                gas_limit: U256::from(u64::MAX), // set high gas limit for debugging
                 gas_price: U256::from(0 as u8),
                 nonce: U256::from(0 as u8),
-                payload: "0123456789abcdef".to_string(), // Mock payload for debugging
+                payload: "0123456789abcdef".to_string(), // mock payload for debugging
                 signature: String::new(),
             },
             storage: HashMap::new(),
@@ -196,6 +196,7 @@ fn print_help() {
     println!("  instruction  (i)    - Show current instruction");
     println!("  instructions (is)   - Show all loaded instructions");
     println!("  load <file>         - Load bytecode from file");
+    println!("  payload <number>    - Set transaction payload (U256 number)");
     println!("  status              - Show VM status");
     println!("  reset               - Reset VM to initial state");
     println!("  help (h)            - Show this help message");
@@ -383,6 +384,28 @@ fn main() {
                             match debugger.load_bytecode(args[1]) {
                                 Ok(_) => println!("✅ Bytecode loaded successfully"),
                                 Err(e) => println!("⚠️ Error: {}", e),
+                            }
+                        }
+                        println!(""); // Empty line for better readability
+                    },
+                    "payload" => {
+                        if args.len() < 2 {
+                            println!("\nUsage: payload <number>");
+                            println!("Example: payload 44498791341789130779000610706344428292527374111765742649484221914253413580800");
+                        } else {
+                            let num_str = args[1].to_string();
+                            // Convert to U256 and then to hex string
+                            match U256::from_str_radix(&num_str, 10) {
+                                Ok(num) => {
+                                    let hex = format!("{:064x}", num);
+                                    debugger.vm.transaction.payload = hex.clone();
+                                    println!("\n✅ Transaction payload set to:");
+                                    println!("  Decimal: {}", num_str);
+                                    println!("  Hex: {}", hex);
+                                },
+                                Err(_) => {
+                                    println!("\n⚠️ Invalid number. Payload must be a valid U256 number");
+                                }
                             }
                         }
                         println!(""); // Empty line for better readability
