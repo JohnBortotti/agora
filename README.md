@@ -42,3 +42,8 @@ check out [docs](./docs/README.md)
 - [ ] Optimizations and fixes
   - [ ] Optimize block broadcasting (remove cyclical requests)
   - [ ] Implement singleton secp256k1 context
+
+### Main Goal
+
+- [ ] Compile and deploy a simple token contract on the network
+  - Source code: [`simple_token.agora`](./agora_lang_compiler/examples/simple_token.agora)
