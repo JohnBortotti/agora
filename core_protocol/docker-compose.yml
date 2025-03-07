@@ -2,7 +2,6 @@ services:
   node1:
     build: .
     container_name: agora_node_1
-    image: ocaml-project
     environment:
       - NODE_ADDR=http://node1:8080
       - MINER_ADDR=04757e943e7faf81f941a2d6189e444cceb112d921c0079098f07b3bc8e0c0741f08a8f6b07f093d1def66955f2957edcbbdf6c9b7cf5c99beb00c4e4a26dd21b2
@@ -11,8 +10,10 @@ services:
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
       - VM_LIB_PATH=/home/opam/virtual_machine/libvirtual_machine.so
       - ENTROPY_POOL=1
-    # volumes:
-    #   - ./core/:/home/opam/app
+      - AGORA_DEBUG=false
+    volumes:
+      - ./debug_data/node1:/home/opam/debug
+      # - ./core:/home/opam/app
     working_dir: /home/opam/app
     ports: 
       - "8081:8080"
@@ -22,7 +23,6 @@ services:
   node2:
     build: .
     container_name: agora_node_2
-    image: ocaml-project
     environment:
       - NODE_ADDR=http://node2:8080
       - MINER_ADDR=0431480f7fb51dd04dc6272489d095447907c3cf18157538e8f449c9e71784b82c34b81877b41bb04c2647efb3550506909072c609b7dcdd716b07e204aeec8132
@@ -31,6 +31,9 @@ services:
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
       - VM_LIB_PATH=/home/opam/virtual_machine/libvirtual_machine.so
       - ENTROPY_POOL=2
+      - AGORA_DEBUG=false
+    volumes:
+      - ./debug_data/node2:/home/opam/debug
     working_dir: /home/opam/app
     ports: 
       - "8082:8080"
@@ -40,7 +43,6 @@ services:
   node3:
     build: .
     container_name: agora_node_3
-    image: ocaml-project
     environment:
       - NODE_ADDR=http://node3:8080
       - MINER_ADDR=04c2350f4491d8bcdb4c953865f1520e5940c2d2cb8fc4402c7cc7b379cc1c14fe5ca5ec8f1e6966a71e6ee29fb2dc4e215eca0498fa30c7839e5f579969c42383
@@ -49,6 +51,9 @@ services:
       - DATABASE_LIB_PATH=/home/opam/database/libdatabase.so
       - VM_LIB_PATH=/home/opam/virtual_machine/libvirtual_machine.so
       - ENTROPY_POOL=3
+      - AGORA_DEBUG=false
+    volumes:
+      - ./debug_data/node3:/home/opam/debug
     working_dir: /home/opam/app
     ports: 
       - "8083:8080"

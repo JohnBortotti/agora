@@ -1,7 +1,9 @@
-FROM ocaml/opam:latest
+FROM ocaml/opam:debian-ocaml-5.2
 
-# RUN sudo apt-get update && sudo apt-get install -y \
-RUN sudo apt-get install -y \
+ENV OPAMJOBS=4
+
+# install system dependencies in a single step
+RUN sudo apt-get update && sudo apt-get install -y \
     build-essential \
     m4 \
     zlib1g-dev \
@@ -9,27 +11,36 @@ RUN sudo apt-get install -y \
     pkg-config \
     libsecp256k1-dev \
     libffi-dev \
-    && opam install -y dune cryptokit \
-    && opam install -y dune digestif \
-    && opam install -y dune lwt \
-    && opam install cohttp-lwt-unix cohttp-async \
-    && opam install yojson \
-    && opam install alcotest \ 
-    && opam install secp256k1 --unlock-base \
-    && opam install ctypes ctypes-foreign \
-    && sudo apt-get clean
+    && sudo apt-get clean \
+    && sudo rm -rf /var/lib/apt/lists/*
+
+# install all OCaml dependencies in a single step for better caching
+RUN opam update && opam install -y \
+    dune \
+    cryptokit \
+    digestif \
+    lwt \
+    cohttp-lwt-unix \
+    cohttp-async \
+    yojson \
+    alcotest \
+    ctypes \
+    ctypes-foreign \
+    && opam install -y secp256k1 --unlock-base
 
 WORKDIR /home/opam/app
 
+# copy database and VM files
 COPY ./database/target/release/ /home/opam/database/
-
 COPY ./virtual_machine/target/release/ /home/opam/virtual_machine/
 
+# copy application code
 COPY ./core /home/opam/app
 
-RUN mkdir /home/opam/db-data/
-RUN mkdir /home/opam/db-data/global-state/
-RUN mkdir /home/opam/db-data/contract-state/
-RUN mkdir /home/opam/db-data/receipt-state
+# create required directories
+RUN mkdir -p /home/opam/db-data/global-state/ \
+    /home/opam/db-data/contract-state/ \
+    /home/opam/db-data/receipt-state \
+    /home/opam/debug
 
 CMD ["dune", "exec", "bin/main.exe"]

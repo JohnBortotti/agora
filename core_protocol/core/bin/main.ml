@@ -20,6 +20,12 @@ let get_env_var var_name =
   with
   | Not_found -> None
 
+(* debug flag to enable debug features *)
+let debug_mode = 
+  match get_env_var "AGORA_DEBUG" with
+  | Some "true" -> true
+  | _ -> false
+
 let () = 
   let node_addr = (match get_env_var "NODE_ADDR" with 
   | Some x -> x  
@@ -34,7 +40,7 @@ let () =
   | None -> failwith "env var 'KNOWN_PEERS' not found")
   in
 
-  print_endline "[NODE] running node...";
+  print_endline (if debug_mode then "[NODE][DEBUG-ENABLED] running node..." else "[NODE] running node...");
 
-  let node = new_node node_addr miner_addr_env known_peers_env in
+  let node = new_node node_addr miner_addr_env known_peers_env debug_mode in
   run_node node;

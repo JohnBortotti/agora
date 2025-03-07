@@ -4,6 +4,7 @@ open Lwt.Syntax
 open Virtual_machine
 open Jsonrpc
 open Account
+open Debug
 
 type node = {
   address: string;
@@ -22,6 +23,7 @@ type node = {
   receipt_state_mutex: Lwt_mutex.t;
   contract_state: State.t ref;
   contract_state_mutex: Lwt_mutex.t;
+  debug_enabled: bool;
 }
 
 module Features = struct
@@ -296,6 +298,20 @@ module Features = struct
                     Lwt_mutex.unlock node.known_peers_mutex;
                     let* () = broadcast_block peers_list received_block in
 
+                    let* () = 
+                      if node.debug_enabled then
+                        Debug.log_event ~module_name:"Node" "block_broadcast" (
+                          `Assoc [
+                            ("block_hash", `String received_block.hash);
+                            ("block_index", `Int received_block.index);
+                            ("peer_count", `Int (List.length peers_list));
+                            ("timestamp", `Float (Unix.time ()));
+                          ]
+                        )
+                      else
+                        Lwt.return_unit
+                    in
+
                     let all_incoming_transactions = List.flatten 
                       (List.map (fun block -> block.Block.transactions) 
                       new_blocks) 
@@ -442,6 +458,20 @@ module Features = struct
 
         let* () = broadcast_block peers_list received_block in
 
+        let* () = 
+          if node.debug_enabled then
+            Debug.log_event ~module_name:"Node" "block_broadcast" (
+              `Assoc [
+                ("block_hash", `String received_block.hash);
+                ("block_index", `Int received_block.index);
+                ("peer_count", `Int (List.length peers_list));
+                ("timestamp", `Float (Unix.time ()));
+              ]
+            )
+          else
+            Lwt.return_unit
+        in
+
         Lwt.return_true
       with 
       | Failure msg ->
@@ -505,6 +535,21 @@ module Features = struct
     in  
     let state_root = MKPTrie.hash updated_state_trie in
     let receipt_root = MKPTrie.hash updated_receipt_trie in
+
+    (* log mining start event *)
+    let* () = 
+      if node.debug_enabled then
+        Debug.log_event ~module_name:"Node" "mining_started" (
+          `Assoc [
+            ("prev_block_hash", `String prev_block.hash);
+            ("tx_count", `Int (List.length transactions));
+            ("difficulty", `Int difficulty);
+            ("timestamp", `Float (Unix.time ()));
+          ]
+        )
+      else
+        Lwt.return_unit
+    in
 
     let rec mine nonce =
       let* _ = Lwt.pause () in
@@ -574,6 +619,21 @@ module Features = struct
           transactions_to_mine prev_block difficulty miner_addr
         in
 
+        let* () = 
+          if node.debug_enabled then
+            Debug.log_event ~module_name:"Node" "block_mined" (
+              `Assoc [
+                ("block_hash", `String mined_block.hash);
+                ("block_index", `Int mined_block.index);
+                ("tx_count", `Int (List.length mined_block.transactions));
+                ("difficulty", `Int difficulty);
+                ("timestamp", `Float (Unix.time ()));
+              ]
+            )
+          else
+            Lwt.return_unit
+        in
+
         (* update blockchain *)
         let* () = Lwt_mutex.lock node.blockchain_mutex in
         node.blockchain := mined_block :: curr_blockchain;
@@ -625,6 +685,20 @@ module RpcInterface = struct
         | Some (`List [ tx_json ]) ->
             let tx = Transaction.transaction_of_json tx_json in
             let* _ = Features.add_transaction node tx in
+            let* () = 
+              if node.debug_enabled then
+                Debug.log_event ~module_name:"Node" "transaction_received" (
+                  `Assoc [
+                    ("tx_hash", `String tx.hash);
+                    ("sender", `String tx.sender);
+                    ("receiver", `String tx.receiver);
+                    ("amount", `Int tx.amount);
+                    ("timestamp", `Float (Unix.time ()));
+                  ]
+                )
+              else
+                Lwt.return_unit
+            in
             Lwt.return (`String "Transaction received")
         | _ -> Lwt.return (create_error (-32602) "Invalid params" None)
     )
@@ -632,6 +706,19 @@ module RpcInterface = struct
       match params with
         | Some (`List [ `String peer_addr; block_json ]) ->
             let* _ = Features.handle_block_proposal node peer_addr block_json in
+            let* () = 
+              if node.debug_enabled then
+                Debug.log_event ~module_name:"Node" "block_received" (
+                  `Assoc [
+                    ("peer_addr", `String peer_addr);
+                    ("block_hash", `String (Block.block_of_json block_json).hash);
+                    ("block_index", `Int (Block.block_of_json block_json).index);
+                    ("timestamp", `Float (Unix.time ()));
+                  ]
+                )
+              else
+                Lwt.return_unit
+            in
             Lwt.return (`String "Block received")
         | _ -> Lwt.return (create_error (-32602) "Invalid params" None)
     )
@@ -692,8 +779,12 @@ module Transport = struct
     Server.create ~mode:(`TCP (`Port 8080)) server
 end
 
-let new_node node_addr miner_addr known_peers =
+let new_node node_addr miner_addr known_peers debug_enabled =
   let open Block in
+
+  (* initialize debug if enabled *)
+  if debug_enabled then
+    Debug.init_debug true "/home/opam/debug/debug_info.json";
 
   let genesis = {
     index = 0;
@@ -724,6 +815,7 @@ let new_node node_addr miner_addr known_peers =
     receipt_state_mutex = Lwt_mutex.create ();
     known_peers = ref known_peers;
     known_peers_mutex = Lwt_mutex.create ();
+    debug_enabled;
   }
    
 let run_node node =
@@ -732,5 +824,6 @@ let run_node node =
       Features.validate_transaction_pool node;
       Features.mining_routine node;
       Transport.http_server node;
+      (if node.debug_enabled then Debug.debug_persistence_routine () else Lwt.return_unit)
     ] in
   Lwt_main.run main_loop

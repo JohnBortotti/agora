@@ -17,7 +17,8 @@ type node = {
   receipt_state_mutex: Lwt_mutex.t;
   contract_state: State.t ref;
   contract_state_mutex: Lwt_mutex.t;
+  debug_enabled: bool;
 }
 
-val new_node: string -> string -> string list -> node
+val new_node: string -> string -> string list -> bool -> node
 val run_node: node -> unit
