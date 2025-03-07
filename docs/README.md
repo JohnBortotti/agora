@@ -43,6 +43,19 @@
    ./main examples/your_contract.agora
    ```
 
+### VM Debugger
+
+1. Build the debugger:
+   ```bash
+   cd /core_protocol/vm_debugger
+   cargo build --release
+   ```
+
+2. Run the debugger:
+   ```bash
+   ./target/release/vm_debugger
+   ```
+
 ## Architecture
 
 ### Core Protocol
@@ -83,3 +96,25 @@ The compiler transforms Agora smart contract language into bytecode for the virt
 - **Parser**: Builds abstract syntax tree (AST) from tokens
 - **AST**: Defines the hierarchical structure of the program
 - **Code Generator**: Produces executable bytecode for the virtual machine
+
+### VM Debugger
+
+The debugger provides an interactive environment for inspecting and debugging virtual machine bytecode execution:
+
+- **Interactive Commands**:
+  - Step-by-step execution
+  - Continuous execution until breakpoint
+  - State rollback
+  - Program inspection with `stack`, `memory`, `storage` commands
+
+- **Debugging Features**:
+  - Breakpoint management at specific program counter positions
+  - Real-time stack and memory inspection
+  - Current instruction display with program counter tracking
+  - Full program instruction listing with execution pointer
+
+- **State Visualization**:
+  - Stack values displayed with indices
+  - Memory shown in hexadecimal format with addresses
+  - Storage entries as key-value pairs
+  - Clear status indicators for VM state and operations

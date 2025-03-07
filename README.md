@@ -17,6 +17,12 @@ Agora is a distributed computing protocol powered by blockchain technology.
     - **ast**: defines the abstract syntax tree structure.
     - **code_gen**: generates executable code for the virtual machine.
 
+- **vm_debugger**: interactive debugger for the virtual machine.
+    - Step-by-step execution of bytecode
+    - Stack, memory, and storage inspection
+    - Breakpoint support
+    - Program state visualization
+
 - **docs**: documentation and notes about the project.
 
 check out [docs](./docs/README.md)
