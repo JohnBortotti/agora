@@ -17,7 +17,7 @@ pub trait VMStateMachine {
   fn get_contract_address(&self) -> String;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum VMStatus {
   Initializing { request_id: Uuid },
   Running,
@@ -26,13 +26,13 @@ pub enum VMStatus {
   Finished { change_set: OverlayedChangeSet },
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum VMEvent {
   SpawnVM(Transaction),
   RequestData(JsonRpcRequest),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct OverlayedChangeSet {
   pub status: bool,
   pub message: String,
@@ -44,14 +44,14 @@ pub struct OverlayedChangeSet {
   pub gas_remaining: U256,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 pub struct InternalTransaction {
   pub sender: String,
   pub receiver: String,
   pub amount: U256,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Transaction {
   pub hash: String,
   pub sender: String,
@@ -64,7 +64,7 @@ pub struct Transaction {
   pub signature: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct VM {
   pub id: Uuid,
   pub transaction: Transaction,

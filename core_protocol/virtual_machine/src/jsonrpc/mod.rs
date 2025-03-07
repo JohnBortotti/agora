@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json;
 use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct JsonRpcRequest {
   pub jsonrpc: String,
   pub method: String,
@@ -10,7 +10,7 @@ pub struct JsonRpcRequest {
   pub id: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct JsonRpcResponse {
   pub jsonrpc: String,
   pub result: Option<serde_json::Value>,

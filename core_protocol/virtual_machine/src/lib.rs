@@ -1,11 +1,27 @@
 mod jsonrpc;
-mod vm;
+
+pub mod vm;
 
 use vm::server::Server;
 use ethnum::U256;
-use vm::vm_core::Transaction;
+use vm::vm_core::{Transaction, VM};
 use std::ffi::{CStr, CString, c_char, c_void};
 use uuid::Uuid;
+
+// Exposes a mocked VM for debugging purposes
+pub fn create_debug_vm() -> VM {
+  VM::new(Uuid::new_v4(), Transaction {
+    hash: "debug".to_string(),
+    sender: "debug_sender".to_string(),
+    receiver: "debug_receiver".to_string(),
+    amount: U256::from(0 as u64),
+    gas_limit: U256::from(1000000 as u64),
+    gas_price: U256::from(1 as u64),
+    nonce: U256::from(0 as u64),
+    payload: "".to_string(),
+    signature: "debug_signature".to_string(),
+  })
+}
 
 #[no_mangle]
 pub extern "C" fn ffi_create_vm_server() -> *mut Server {
