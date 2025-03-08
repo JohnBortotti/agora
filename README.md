@@ -30,8 +30,10 @@ check out [docs](./docs/README.md)
 ## TODO
 
 ### Lang Compiler
-- [ ] Function dispatcher (ABI)
-  - [ ] Read payload data
+- [x] Function dispatcher (ABI)
+  - [x] Read payload data
+  - [x] COPY instruction
+  - [ ] payload arguments
   - [ ] Mappings (storage read/write)
 
 ### Smart Contracts
