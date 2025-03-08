@@ -414,6 +414,7 @@ fn main() {
                         println!("\n=== VM Status ===");
                         println!("VM ID: {}", debugger.vm.id);
                         println!("PC: {}", debugger.vm.pc);
+                        println!("Payload: {}", debugger.vm.transaction.payload);
                         println!("Stack size: {}", debugger.vm.stack.len());
                         println!("Memory size: {} bytes", debugger.vm.memory.len());
                         println!("Storage entries: {}", debugger.vm.storage.len());
